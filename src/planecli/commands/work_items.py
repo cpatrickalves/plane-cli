@@ -34,6 +34,16 @@ WI_COLUMNS = [
     ("created_at", "Created"),
 ]
 
+WI_COLUMNS_ALL = [
+    ("project_identifier", "Project"),
+    ("sequence_id", "ID"),
+    ("name", "Title"),
+    ("priority", "Priority"),
+    ("state_detail_name", "State"),
+    ("assignee_names", "Assignees"),
+    ("created_at", "Created"),
+]
+
 WI_FIELDS = [
     ("id", "UUID"),
     ("sequence_id", "Sequence ID"),
@@ -161,7 +171,7 @@ def list_(
     Parameters
     ----------
     project
-        Project name, identifier, or UUID.
+        Project name, identifier, or UUID. If omitted, lists from all projects.
     assignee
         Filter by assignee name or 'me'.
     state
@@ -173,28 +183,13 @@ def list_(
     limit
         Maximum results to show.
     """
-    from planecli.exceptions import ValidationError
     from planecli.utils.resolve import _paginate_all
-
-    if not project:
-        raise ValidationError(
-            "Project is required for listing work items.",
-            hint="Use --project <name-or-id> to specify the project.",
-        )
 
     try:
         client = get_client()
         workspace = get_workspace()
-        proj = resolve_project(project, client, workspace)
-        project_id = proj["id"]
-        proj_identifier = proj.get("identifier", "")
 
-        items = _paginate_all(client.work_items.list, workspace, project_id)
-
-        # Build lookup maps for UUID -> name resolution
-        states = _paginate_all(client.states.list, workspace, project_id)
-        state_map = {s.id: s.name for s in states if s.id and s.name}
-
+        # Workspace-scoped: fetch members once
         members = client.workspaces.get_members(workspace)
         member_map = {}
         for m in members:
@@ -206,21 +201,42 @@ def list_(
             )
             member_map[m.id] = full_name or m.display_name or ""
 
-        labels_list = _paginate_all(client.labels.list, workspace, project_id)
-        label_map = {lb.id: lb.name for lb in labels_list if lb.id and lb.name}
+        if project:
+            # Single project path (existing behavior)
+            proj = resolve_project(project, client, workspace)
+            projects_to_list = [proj]
+        else:
+            # All projects path
+            all_projects = _paginate_all(client.projects.list, workspace)
+            projects_to_list = [p.model_dump() for p in all_projects]
+
+        data = []
+        for proj in projects_to_list:
+            project_id = proj["id"]
+            proj_identifier = proj.get("identifier", "")
+
+            items = _paginate_all(client.work_items.list, workspace, project_id)
+            if not items:
+                continue
+
+            # Per-project lookup maps
+            states = _paginate_all(client.states.list, workspace, project_id)
+            state_map = {s.id: s.name for s in states if s.id and s.name}
+            labels_list = _paginate_all(client.labels.list, workspace, project_id)
+            label_map = {lb.id: lb.name for lb in labels_list if lb.id and lb.name}
+
+            for i in items:
+                enriched = _enrich_work_item(
+                    i.model_dump(),
+                    state_map=state_map,
+                    member_map=member_map,
+                    label_map=label_map,
+                    project_identifier=proj_identifier,
+                )
+                enriched["project_identifier"] = proj_identifier
+                data.append(enriched)
     except PlaneError as e:
         raise handle_api_error(e)
-
-    data = [
-        _enrich_work_item(
-            i.model_dump(),
-            state_map=state_map,
-            member_map=member_map,
-            label_map=label_map,
-            project_identifier=proj_identifier,
-        )
-        for i in items
-    ]
 
     # Filter by assignee
     if assignee:
@@ -250,7 +266,8 @@ def list_(
         data.sort(key=lambda x: x.get("created_at") or "", reverse=True)
 
     data = data[:limit]
-    output(data, WI_COLUMNS, title="Work Items", as_json=json)
+    columns = WI_COLUMNS if project else WI_COLUMNS_ALL
+    output(data, columns, title="Work Items", as_json=json)
 
 
 @wi_app.command(alias="read")
