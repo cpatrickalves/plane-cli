@@ -83,18 +83,30 @@ The main differentiator of PlaneCLI is its intelligent resource resolution via *
    cd planecli-compound
    ```
 
-2. Install dependencies with `uv`:
+2. Install the CLI (choose one option):
+
+   **Option 1 — System-wide install (recommended):**
+
+   ```bash
+   uv tool install -e .
+   ```
+
+   This installs `planecli` as a standalone command available from anywhere. The `-e` (editable) flag means code changes are reflected immediately without reinstalling.
+
+   **Option 2 — Development only:**
 
    ```bash
    uv sync
    ```
+
+   This installs dependencies in a local virtual environment. Commands must be run with `uv run planecli`.
 
 3. Configure credentials (choose one option):
 
    **Option A - Interactive setup:**
 
    ```bash
-   uv run planecli configure
+   planecli configure
    ```
 
    **Option B - Environment variables:**
@@ -116,44 +128,46 @@ The main differentiator of PlaneCLI is its intelligent resource resolution via *
 
 > **Configuration precedence:** CLI arguments > environment variables > `~/.plane_api` file
 
-## Running the Project
+## Usage
+
+> If you installed with `uv tool install`, use `planecli` directly. If using `uv sync`, prefix all commands with `uv run`.
 
 ```bash
 # Check authenticated user
-uv run planecli whoami
+planecli whoami
 
 # List projects
-uv run planecli project list
+planecli project list
 
 # List work items for a project
-uv run planecli wi list --project "Frontend"
+planecli wi list --project "Frontend"
 
 # Create a work item
-uv run planecli wi create "Fix login timeout" --project "Frontend" --assign me --priority urgent
+planecli wi create "Fix login timeout" --project "Frontend" --assign me --priority urgent
 
 # Create a sub-issue
-uv run planecli wi create "Review PR #345" --parent ABC-234 --assign "Luiz" --state "In Review"
+planecli wi create "Review PR #345" --parent ABC-234 --assign "Luiz" --state "In Review"
 
 # Update a work item state
-uv run planecli wi update ABC-123 --state "In Review"
+planecli wi update ABC-123 --state "In Review"
 
 # Add a comment to a work item
-uv run planecli comment create ABC-123 --body "Fixed in PR #456"
+planecli comment create ABC-123 --body "Fixed in PR #456"
 
 # List comments
-uv run planecli comment list ABC-123
+planecli comment list ABC-123
 
 # List documents for a project
-uv run planecli document list --project "Backend"
+planecli document list --project "Backend"
 
 # List workspace users
-uv run planecli users list
+planecli users list
 
 # JSON output (useful for integration with other tools)
-uv run planecli wi list --project "Frontend" --json
+planecli wi list --project "Frontend" --json
 
 # Sort results
-uv run planecli wi list --sort updated --limit 10
+planecli wi list --sort updated --limit 10
 ```
 
 ### Command Aliases
@@ -187,4 +201,3 @@ uv run planecli wi list --sort updated --limit 10
 | `ResourceNotFoundError` when using resource name | Verify the name is correct with `planecli <resource> list`; fuzzy search requires at least 60% similarity |
 | API connection error | Check that `PLANE_BASE_URL` is correct and accessible |
 | JSON output doesn't appear with table | The table is sent to stderr and JSON to stdout; use `2>/dev/null` to see only the JSON |
-

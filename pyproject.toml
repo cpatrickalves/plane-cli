@@ -6,7 +6,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [
-    { name = "Patrick Alves" },
+    { name = "Patrick Alves", email = "cpatrickalves@gmail.com" },
 ]
 keywords = ["plane", "cli", "project-management"]
 classifiers = [
