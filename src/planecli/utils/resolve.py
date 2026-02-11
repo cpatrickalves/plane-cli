@@ -242,6 +242,29 @@ def resolve_state(
     raise ResourceNotFoundError("State", query)
 
 
+def resolve_cycle(
+    query: str, client: PlaneClient, workspace: str, project_id: str
+) -> dict[str, Any]:
+    """Resolve a cycle by UUID or fuzzy name match.
+
+    Returns the cycle as a dict.
+    """
+    if _is_uuid(query):
+        try:
+            cycle = client.cycles.retrieve(workspace, project_id, query)
+            return cycle.model_dump()
+        except HttpError:
+            raise ResourceNotFoundError("Cycle", query)
+
+    cycles = _paginate_all(client.cycles.list, workspace, project_id)
+
+    match = find_best_match(query, cycles, key=lambda c: c.name or "")
+    if match:
+        return match.item.model_dump()
+
+    raise ResourceNotFoundError("Cycle", query)
+
+
 def resolve_label(
     name: str, client: PlaneClient, workspace: str, project_id: str
 ) -> dict[str, Any]:

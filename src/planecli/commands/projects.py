@@ -20,9 +20,27 @@ project_app = cyclopts.App(
 PROJECT_COLUMNS = [
     ("identifier", "ID"),
     ("name", "Name"),
+    ("state_display", "State"),
     ("description", "Description"),
     ("created_at", "Created"),
 ]
+
+# Plane project network values map to these states
+_NETWORK_TO_STATE = {
+    0: "planned",
+    1: "started",
+    2: "paused",
+    3: "completed",
+    4: "canceled",
+}
+
+
+def _enrich_project(data: dict) -> dict:
+    """Add convenience fields to a project dict."""
+    network = data.get("network")
+    fallback = str(network) if network is not None else ""
+    data["state_display"] = _NETWORK_TO_STATE.get(network, fallback)
+    return data
 
 PROJECT_FIELDS = [
     ("id", "UUID"),
@@ -38,11 +56,22 @@ PROJECT_FIELDS = [
 @project_app.command(name="list", alias="ls")
 def list_(
     *,
+    state: Annotated[str | None, Parameter(alias="-s")] = None,
     limit: Annotated[int, Parameter(alias="-l")] = 50,
-    sort: str = "created",
+    sort: str = "linear",
     json: bool = False,
 ) -> None:
-    """List all projects in the workspace."""
+    """List all projects in the workspace.
+
+    Parameters
+    ----------
+    state
+        Filter by state: planned, started, paused, completed, canceled.
+    limit
+        Maximum results to show.
+    sort
+        Sort order: linear (default), created, updated.
+    """
     from planecli.utils.resolve import _paginate_all
 
     try:
@@ -52,13 +81,30 @@ def list_(
     except PlaneError as e:
         raise handle_api_error(e)
 
-    data = [p.model_dump() for p in projects]
+    data = [_enrich_project(p.model_dump()) for p in projects]
+
+    # Filter by state
+    if state:
+        state_lower = state.lower()
+        # Reverse lookup: state name -> network value
+        state_to_network = {v: k for k, v in _NETWORK_TO_STATE.items()}
+        if state_lower not in state_to_network:
+            valid = ", ".join(sorted(state_to_network.keys()))
+            from planecli.exceptions import ValidationError
+            raise ValidationError(
+                f"Invalid state '{state}'. Valid states: {valid}"
+            )
+        target_network = state_to_network[state_lower]
+        data = [d for d in data if d.get("network") == target_network]
 
     # Sort
     if sort == "updated":
         data.sort(key=lambda x: x.get("updated_at") or "", reverse=True)
-    else:
+    elif sort == "created":
         data.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    else:
+        # "linear" - sort by sort_order if available, otherwise by created_at
+        data.sort(key=lambda x: x.get("sort_order") or 0)
 
     data = data[:limit]
     output(data, PROJECT_COLUMNS, title="Projects", as_json=json)

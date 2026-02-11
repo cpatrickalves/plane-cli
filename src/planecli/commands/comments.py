@@ -133,3 +133,96 @@ def create(
     else:
         from planecli.formatters import console
         console.print(f"[green]Comment added to {issue}.[/]")
+
+
+@comment_app.command
+def update(
+    comment_id: str,
+    *,
+    issue: str,
+    body: Annotated[str, Parameter(alias="-b")],
+    project: Annotated[str | None, Parameter(alias="-p")] = None,
+    json: bool = False,
+) -> None:
+    """Update a comment on a work item.
+
+    Parameters
+    ----------
+    comment_id
+        Comment UUID.
+    issue
+        Work item identifier (ABC-123) or UUID.
+    body
+        New comment text (plain text, converted to HTML).
+    project
+        Project name/ID (required for name-based lookup).
+    """
+    from plane.models.work_items import UpdateWorkItemComment
+
+    try:
+        client = get_client()
+        workspace = get_workspace()
+
+        if project:
+            from planecli.utils.resolve import resolve_project
+            proj = resolve_project(project, client, workspace)
+            project_id = proj["id"]
+            item = resolve_work_item(issue, client, workspace, project_id)
+        else:
+            item, project_id = resolve_work_item_across_projects(issue, client, workspace)
+
+        item_id = item["id"]
+
+        update_data = UpdateWorkItemComment(comment_html=f"<p>{body}</p>")
+        comment = client.work_items.comments.update(
+            workspace, project_id, item_id, comment_id, update_data
+        )
+        data = _enrich_comment(comment.model_dump())
+    except PlaneError as e:
+        raise handle_api_error(e)
+
+    if json:
+        output_single(data, [], as_json=True)
+    else:
+        from planecli.formatters import console
+        console.print(f"[green]Comment updated on {issue}.[/]")
+
+
+@comment_app.command
+def delete(
+    comment_id: str,
+    *,
+    issue: str,
+    project: Annotated[str | None, Parameter(alias="-p")] = None,
+) -> None:
+    """Delete a comment from a work item.
+
+    Parameters
+    ----------
+    comment_id
+        Comment UUID.
+    issue
+        Work item identifier (ABC-123) or UUID.
+    project
+        Project name/ID (required for name-based lookup).
+    """
+    from planecli.formatters import console
+
+    try:
+        client = get_client()
+        workspace = get_workspace()
+
+        if project:
+            from planecli.utils.resolve import resolve_project
+            proj = resolve_project(project, client, workspace)
+            project_id = proj["id"]
+            item = resolve_work_item(issue, client, workspace, project_id)
+        else:
+            item, project_id = resolve_work_item_across_projects(issue, client, workspace)
+
+        item_id = item["id"]
+        client.work_items.comments.delete(workspace, project_id, item_id, comment_id)
+    except PlaneError as e:
+        raise handle_api_error(e)
+
+    console.print("[green]Comment deleted.[/]")
