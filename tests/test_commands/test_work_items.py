@@ -24,6 +24,7 @@ def _make_work_item(
     sequence_id: int,
     state: str = "state-uuid-1",
     assignees: list | None = None,
+    labels: list | None = None,
     created_at: str = "2026-02-10T12:00:00Z",
     updated_at: str = "2026-02-10T12:00:00Z",
 ):
@@ -34,7 +35,7 @@ def _make_work_item(
         "sequence_id": sequence_id,
         "state": state,
         "assignees": assignees or [],
-        "labels": [],
+        "labels": labels or [],
         "priority": "medium",
         "created_at": created_at,
         "updated_at": updated_at,
@@ -486,3 +487,321 @@ class TestWiList:
         assert call_args[1]["as_json"] is True
         data = call_args[0][0]
         assert data[0]["project_identifier"] == "FE"
+
+    @patch("planecli.commands.work_items.output")
+    @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
+    @patch("planecli.commands.work_items.get_client")
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_labels", new_callable=AsyncMock)
+    async def test_list_filter_by_single_state(
+        self,
+        mock_cached_labels,
+        mock_cached_states,
+        mock_cached_projects,
+        mock_cached_members,
+        mock_paginate,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_output,
+    ):
+        """Single --state value still works (backward compat)."""
+        mock_get_client.return_value = MagicMock()
+        mock_create_client.return_value = MagicMock()
+        mock_cached_members.return_value = []
+        mock_cached_projects.return_value = [
+            _make_project_dict("proj-1", "FE", "Frontend"),
+        ]
+        mock_paginate.return_value = [
+            _make_work_item("wi-1", "Todo task", 1, state="s-todo"),
+            _make_work_item("wi-2", "Done task", 2, state="s-done"),
+        ]
+        mock_cached_states.return_value = [
+            _make_state_dict("s-todo", "Todo"),
+            _make_state_dict("s-done", "Done"),
+        ]
+        mock_cached_labels.return_value = []
+
+        await list_(state="Todo")
+
+        data = mock_output.call_args[0][0]
+        assert len(data) == 1
+        assert data[0]["name"] == "Todo task"
+
+    @patch("planecli.commands.work_items.output")
+    @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
+    @patch("planecli.commands.work_items.get_client")
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_labels", new_callable=AsyncMock)
+    async def test_list_filter_by_multiple_states(
+        self,
+        mock_cached_labels,
+        mock_cached_states,
+        mock_cached_projects,
+        mock_cached_members,
+        mock_paginate,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_output,
+    ):
+        """--state 'Todo,In Progress' returns items matching either state."""
+        mock_get_client.return_value = MagicMock()
+        mock_create_client.return_value = MagicMock()
+        mock_cached_members.return_value = []
+        mock_cached_projects.return_value = [
+            _make_project_dict("proj-1", "FE", "Frontend"),
+        ]
+        mock_paginate.return_value = [
+            _make_work_item("wi-1", "Todo task", 1, state="s-todo"),
+            _make_work_item("wi-2", "Progress task", 2, state="s-progress"),
+            _make_work_item("wi-3", "Done task", 3, state="s-done"),
+        ]
+        mock_cached_states.return_value = [
+            _make_state_dict("s-todo", "Todo"),
+            _make_state_dict("s-progress", "In Progress"),
+            _make_state_dict("s-done", "Done"),
+        ]
+        mock_cached_labels.return_value = []
+
+        await list_(state="Todo,In Progress")
+
+        data = mock_output.call_args[0][0]
+        assert len(data) == 2
+        names = {d["name"] for d in data}
+        assert names == {"Todo task", "Progress task"}
+
+    @patch("planecli.commands.work_items.output")
+    @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
+    @patch("planecli.commands.work_items.get_client")
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_labels", new_callable=AsyncMock)
+    async def test_list_filter_by_single_label(
+        self,
+        mock_cached_labels,
+        mock_cached_states,
+        mock_cached_projects,
+        mock_cached_members,
+        mock_paginate,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_output,
+    ):
+        """--labels 'bug' returns items with 'bug' label."""
+        mock_get_client.return_value = MagicMock()
+        mock_create_client.return_value = MagicMock()
+        mock_cached_members.return_value = []
+        mock_cached_projects.return_value = [
+            _make_project_dict("proj-1", "FE", "Frontend"),
+        ]
+        mock_paginate.return_value = [
+            _make_work_item("wi-1", "Bug task", 1, labels=["lbl-bug"]),
+            _make_work_item("wi-2", "Feature task", 2, labels=["lbl-feat"]),
+        ]
+        mock_cached_states.return_value = []
+        mock_cached_labels.return_value = [
+            _make_label_dict("lbl-bug", "bug"),
+            _make_label_dict("lbl-feat", "feature"),
+        ]
+
+        await list_(labels="bug")
+
+        data = mock_output.call_args[0][0]
+        assert len(data) == 1
+        assert data[0]["name"] == "Bug task"
+
+    @patch("planecli.commands.work_items.output")
+    @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
+    @patch("planecli.commands.work_items.get_client")
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_labels", new_callable=AsyncMock)
+    async def test_list_filter_by_multiple_labels(
+        self,
+        mock_cached_labels,
+        mock_cached_states,
+        mock_cached_projects,
+        mock_cached_members,
+        mock_paginate,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_output,
+    ):
+        """--labels 'bug,frontend' returns items matching either label."""
+        mock_get_client.return_value = MagicMock()
+        mock_create_client.return_value = MagicMock()
+        mock_cached_members.return_value = []
+        mock_cached_projects.return_value = [
+            _make_project_dict("proj-1", "FE", "Frontend"),
+        ]
+        mock_paginate.return_value = [
+            _make_work_item("wi-1", "Bug task", 1, labels=["lbl-bug"]),
+            _make_work_item("wi-2", "FE task", 2, labels=["lbl-fe"]),
+            _make_work_item("wi-3", "Backend task", 3, labels=["lbl-be"]),
+        ]
+        mock_cached_states.return_value = []
+        mock_cached_labels.return_value = [
+            _make_label_dict("lbl-bug", "bug"),
+            _make_label_dict("lbl-fe", "frontend"),
+            _make_label_dict("lbl-be", "backend"),
+        ]
+
+        await list_(labels="bug,frontend")
+
+        data = mock_output.call_args[0][0]
+        assert len(data) == 2
+        names = {d["name"] for d in data}
+        assert names == {"Bug task", "FE task"}
+
+    @patch("planecli.commands.work_items.output")
+    @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
+    @patch("planecli.commands.work_items.get_client")
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_labels", new_callable=AsyncMock)
+    async def test_list_filter_state_and_labels_combined(
+        self,
+        mock_cached_labels,
+        mock_cached_states,
+        mock_cached_projects,
+        mock_cached_members,
+        mock_paginate,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_output,
+    ):
+        """--state 'Todo' --labels 'bug' uses AND logic."""
+        mock_get_client.return_value = MagicMock()
+        mock_create_client.return_value = MagicMock()
+        mock_cached_members.return_value = []
+        mock_cached_projects.return_value = [
+            _make_project_dict("proj-1", "FE", "Frontend"),
+        ]
+        mock_paginate.return_value = [
+            _make_work_item("wi-1", "Todo bug", 1, state="s-todo", labels=["lbl-bug"]),
+            _make_work_item("wi-2", "Todo feat", 2, state="s-todo", labels=["lbl-feat"]),
+            _make_work_item("wi-3", "Done bug", 3, state="s-done", labels=["lbl-bug"]),
+        ]
+        mock_cached_states.return_value = [
+            _make_state_dict("s-todo", "Todo"),
+            _make_state_dict("s-done", "Done"),
+        ]
+        mock_cached_labels.return_value = [
+            _make_label_dict("lbl-bug", "bug"),
+            _make_label_dict("lbl-feat", "feature"),
+        ]
+
+        await list_(state="Todo", labels="bug")
+
+        data = mock_output.call_args[0][0]
+        assert len(data) == 1
+        assert data[0]["name"] == "Todo bug"
+
+    @patch("planecli.commands.work_items.output")
+    @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
+    @patch("planecli.commands.work_items.get_client")
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_labels", new_callable=AsyncMock)
+    async def test_list_filter_state_with_whitespace(
+        self,
+        mock_cached_labels,
+        mock_cached_states,
+        mock_cached_projects,
+        mock_cached_members,
+        mock_paginate,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_output,
+    ):
+        """Whitespace around commas is trimmed: ' Todo , Done ' works."""
+        mock_get_client.return_value = MagicMock()
+        mock_create_client.return_value = MagicMock()
+        mock_cached_members.return_value = []
+        mock_cached_projects.return_value = [
+            _make_project_dict("proj-1", "FE", "Frontend"),
+        ]
+        mock_paginate.return_value = [
+            _make_work_item("wi-1", "Todo task", 1, state="s-todo"),
+            _make_work_item("wi-2", "Done task", 2, state="s-done"),
+            _make_work_item("wi-3", "Progress task", 3, state="s-progress"),
+        ]
+        mock_cached_states.return_value = [
+            _make_state_dict("s-todo", "Todo"),
+            _make_state_dict("s-done", "Done"),
+            _make_state_dict("s-progress", "In Progress"),
+        ]
+        mock_cached_labels.return_value = []
+
+        await list_(state=" Todo , Done ")
+
+        data = mock_output.call_args[0][0]
+        assert len(data) == 2
+        names = {d["name"] for d in data}
+        assert names == {"Todo task", "Done task"}
+
+    @patch("planecli.commands.work_items.output")
+    @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
+    @patch("planecli.commands.work_items.get_client")
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_labels", new_callable=AsyncMock)
+    async def test_list_filter_labels_no_match(
+        self,
+        mock_cached_labels,
+        mock_cached_states,
+        mock_cached_projects,
+        mock_cached_members,
+        mock_paginate,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_output,
+    ):
+        """--labels 'nonexistent' returns empty result."""
+        mock_get_client.return_value = MagicMock()
+        mock_create_client.return_value = MagicMock()
+        mock_cached_members.return_value = []
+        mock_cached_projects.return_value = [
+            _make_project_dict("proj-1", "FE", "Frontend"),
+        ]
+        mock_paginate.return_value = [
+            _make_work_item("wi-1", "Bug task", 1, labels=["lbl-bug"]),
+        ]
+        mock_cached_states.return_value = []
+        mock_cached_labels.return_value = [
+            _make_label_dict("lbl-bug", "bug"),
+        ]
+
+        await list_(labels="nonexistent")
+
+        data = mock_output.call_args[0][0]
+        assert len(data) == 0

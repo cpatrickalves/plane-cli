@@ -161,10 +161,13 @@ def _enrich_work_item(
                 else:
                     combined.append(str(part))
             data["label_names"] = combined
+            data["label_detail_names"] = [str(part) for part in label_parts]
         else:
             data["label_names"] = ""
+            data["label_detail_names"] = []
     else:
         data["label_names"] = ""
+        data["label_detail_names"] = []
 
     # Description stripped
     desc_html = data.get("description_html") or ""
@@ -228,9 +231,9 @@ async def list_(
     assignee
         Filter by assignee name or 'me'.
     state
-        Filter by state name.
+        Filter by state name (comma-separated).
     labels
-        Filter by labels (comma-separated).
+        Filter by label name (comma-separated).
     sort
         Sort by: created (default), updated.
     limit
@@ -340,13 +343,30 @@ async def list_(
         except Exception:
             pass
 
-    # Filter by state (extract plain text from Text objects for comparison)
+    # Filter by state (comma-separated, OR logic, substring match)
     if state:
-        state_lower = state.lower()
-        data = [
-            d for d in data
-            if state_lower in str(d.get("state_detail_name") or "").lower()
-        ]
+        state_tokens = [s.strip().lower() for s in state.split(",") if s.strip()]
+        if state_tokens:
+            data = [
+                d for d in data
+                if any(
+                    token in str(d.get("state_detail_name") or "").lower()
+                    for token in state_tokens
+                )
+            ]
+
+    # Filter by labels (comma-separated, OR logic, substring match)
+    if labels:
+        label_tokens = [ln.strip().lower() for ln in labels.split(",") if ln.strip()]
+        if label_tokens:
+            data = [
+                d for d in data
+                if any(
+                    token in name.lower()
+                    for token in label_tokens
+                    for name in (d.get("label_detail_names") or [])
+                )
+            ]
 
     # Sort
     if sort == "updated":
