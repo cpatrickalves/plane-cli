@@ -44,7 +44,7 @@ def output(
         sys.stdout.write("\n")
         return
 
-    table = Table(title=title, show_lines=False)
+    table = Table(title=title, show_lines=True, padding=(1, 1))
     for _, header in columns:
         table.add_column(header)
 
@@ -75,7 +75,7 @@ def output_single(
         sys.stdout.write("\n")
         return
 
-    table = Table(title=title, show_header=False, show_lines=False)
+    table = Table(title=title, show_header=False, show_lines=True, padding=(1, 1))
     table.add_column("Field", style="bold cyan", width=20)
     table.add_column("Value")
 
