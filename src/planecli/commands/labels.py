@@ -75,6 +75,16 @@ def list_(
         data.sort(key=lambda x: x.get("created_at") or "", reverse=True)
 
     data = data[:limit]
+
+    # Colorize label names and color swatches for table display
+    if not json:
+        from planecli.utils.colors import color_swatch, colorize
+
+        for d in data:
+            raw_color = d.get("color")
+            d["name"] = colorize(d.get("name", ""), raw_color)
+            d["color"] = color_swatch(raw_color or "")
+
     output(data, LABEL_COLUMNS, title="Labels", as_json=json)
 
 
@@ -103,6 +113,13 @@ def show(
         data = resolve_label(label, client, workspace, project_id)
     except PlaneError as e:
         raise handle_api_error(e)
+
+    if not json:
+        from planecli.utils.colors import color_swatch, colorize
+
+        raw_color = data.get("color")
+        data["name"] = colorize(data.get("name", ""), raw_color)
+        data["color"] = color_swatch(raw_color or "")
 
     output_single(data, LABEL_FIELDS, title="Label Details", as_json=json)
 

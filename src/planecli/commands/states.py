@@ -90,6 +90,16 @@ def list_(
         data.sort(key=lambda x: x.get("sequence") or 0)
 
     data = data[:limit]
+
+    # Colorize state names and color swatches for table display
+    if not json:
+        from planecli.utils.colors import color_swatch, colorize
+
+        for d in data:
+            raw_color = d.get("color")
+            d["name"] = colorize(d.get("name", ""), raw_color)
+            d["color"] = color_swatch(raw_color or "")
+
     output(data, STATE_COLUMNS, title="States", as_json=json)
 
 
@@ -118,6 +128,13 @@ def show(
         data = resolve_state(state, client, workspace, project_id)
     except PlaneError as e:
         raise handle_api_error(e)
+
+    if not json:
+        from planecli.utils.colors import color_swatch, colorize
+
+        raw_color = data.get("color")
+        data["name"] = colorize(data.get("name", ""), raw_color)
+        data["color"] = color_swatch(raw_color or "")
 
     output_single(data, STATE_FIELDS, title="State Details", as_json=json)
 

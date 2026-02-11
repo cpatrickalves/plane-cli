@@ -7,9 +7,11 @@ from typing import Annotated
 import cyclopts
 from cyclopts import Parameter
 from plane.errors import PlaneError
+from rich.text import Text
 
 from planecli.api.client import get_client, get_workspace, handle_api_error
 from planecli.formatters import output, output_single
+from planecli.utils.colors import PRIORITY_COLORS, colorize, lighten_hex
 from planecli.utils.resolve import (
     resolve_label,
     resolve_module,
@@ -63,18 +65,18 @@ WI_FIELDS = [
 def _enrich_work_item(
     data: dict,
     *,
-    state_map: dict[str, str] | None = None,
+    state_map: dict[str, dict[str, str | None]] | None = None,
     member_map: dict[str, str] | None = None,
-    label_map: dict[str, str] | None = None,
+    label_map: dict[str, dict[str, str | None]] | None = None,
     project_identifier: str | None = None,
 ) -> dict:
     """Add convenience fields to a work item dict.
 
     Args:
         data: Work item dict from model_dump().
-        state_map: Optional UUID->name mapping for states.
+        state_map: Optional UUID->{"name": str, "color": str|None} mapping for states.
         member_map: Optional UUID->display_name mapping for workspace members.
-        label_map: Optional UUID->name mapping for labels.
+        label_map: Optional UUID->{"name": str, "color": str|None} mapping for labels.
         project_identifier: Optional project identifier (e.g. "CHATFIN") for sequence IDs.
     """
     # Add sequence_id like CHATFIN-30
@@ -89,12 +91,28 @@ def _enrich_work_item(
     if project_identifier and seq:
         data["sequence_id"] = f"{project_identifier}-{seq}"
 
+    # Priority - colorize with hardcoded color map; keep blank when unset
+    priority_val = data.get("priority") or ""
+    if priority_val and priority_val != "none" and isinstance(priority_val, str):
+        data["priority"] = colorize(priority_val, PRIORITY_COLORS.get(priority_val))
+    else:
+        data["priority"] = ""
+
     # State name - try expanded object first, then lookup map, then raw value
+    # Lighten "unstarted" group colors (e.g. Todo) to distinguish from "backlog"
     state_detail = data.get("state_detail") or data.get("state")
     if isinstance(state_detail, dict):
-        data["state_detail_name"] = state_detail.get("name", "")
+        state_name = state_detail.get("name", "")
+        state_color = state_detail.get("color")
+        if state_color and state_detail.get("group") == "unstarted":
+            state_color = lighten_hex(state_color)
+        data["state_detail_name"] = colorize(state_name, state_color)
     elif isinstance(state_detail, str) and state_map and state_detail in state_map:
-        data["state_detail_name"] = state_map[state_detail]
+        info = state_map[state_detail]
+        state_color = info.get("color")
+        if state_color and info.get("group") == "unstarted":
+            state_color = lighten_hex(state_color)
+        data["state_detail_name"] = colorize(info["name"] or "", state_color)
     elif isinstance(state_detail, str):
         data["state_detail_name"] = state_detail
     else:
@@ -115,18 +133,34 @@ def _enrich_work_item(
     else:
         data["assignee_names"] = ""
 
-    # Label names - try expanded objects first, then lookup map
+    # Label names - try expanded objects first, then lookup map (with per-label colors)
     labels = data.get("labels") or data.get("label_detail") or []
     if isinstance(labels, list):
-        label_names = []
+        label_parts: list[str | Text] = []
         for lbl in labels:
             if isinstance(lbl, dict):
-                label_names.append(lbl.get("name", ""))
+                label_parts.append(
+                    colorize(lbl.get("name", ""), lbl.get("color"))
+                )
             elif isinstance(lbl, str) and label_map and lbl in label_map:
-                label_names.append(label_map[lbl])
+                info = label_map[lbl]
+                label_parts.append(
+                    colorize(info["name"] or "", info.get("color"))
+                )
             elif isinstance(lbl, str):
-                label_names.append(lbl)
-        data["label_names"] = ", ".join(label_names) if label_names else ""
+                label_parts.append(lbl)
+        if label_parts:
+            combined = Text()
+            for i, part in enumerate(label_parts):
+                if i > 0:
+                    combined.append(", ")
+                if isinstance(part, Text):
+                    combined.append_text(part)
+                else:
+                    combined.append(str(part))
+            data["label_names"] = combined
+        else:
+            data["label_names"] = ""
     else:
         data["label_names"] = ""
 
@@ -219,11 +253,21 @@ def list_(
             if not items:
                 continue
 
-            # Per-project lookup maps
+            # Per-project lookup maps (include color and group for enrichment)
             states = _paginate_all(client.states.list, workspace, project_id)
-            state_map = {s.id: s.name for s in states if s.id and s.name}
+            state_map = {
+                s.id: {
+                    "name": s.name,
+                    "color": getattr(s, "color", None),
+                    "group": getattr(s, "group", None),
+                }
+                for s in states if s.id and s.name
+            }
             labels_list = _paginate_all(client.labels.list, workspace, project_id)
-            label_map = {lb.id: lb.name for lb in labels_list if lb.id and lb.name}
+            label_map = {
+                lb.id: {"name": lb.name, "color": getattr(lb, "color", None)}
+                for lb in labels_list if lb.id and lb.name
+            }
 
             for i in items:
                 enriched = _enrich_work_item(
@@ -254,10 +298,13 @@ def list_(
         except Exception:
             pass
 
-    # Filter by state
+    # Filter by state (extract plain text from Text objects for comparison)
     if state:
         state_lower = state.lower()
-        data = [d for d in data if state_lower in (d.get("state_detail_name") or "").lower()]
+        data = [
+            d for d in data
+            if state_lower in str(d.get("state_detail_name") or "").lower()
+        ]
 
     # Sort
     if sort == "updated":

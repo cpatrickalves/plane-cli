@@ -8,13 +8,19 @@ from typing import Any, Sequence
 
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 console = Console(stderr=True)
 error_console = Console(stderr=True)
 
 
-def _format_value(value: Any) -> str:
-    """Format a value for table display, prettifying timestamps."""
+def _format_value(value: Any) -> str | Text:
+    """Format a value for table display, prettifying timestamps.
+
+    Rich Text objects are passed through unchanged to preserve color styling.
+    """
+    if isinstance(value, Text):
+        return value
     if not value:
         return ""
     s = str(value)
@@ -44,7 +50,7 @@ def output(
         sys.stdout.write("\n")
         return
 
-    table = Table(title=title, show_lines=True, padding=(1, 1))
+    table = Table(title=title, show_lines=True, padding=(0, 1))
     for _, header in columns:
         table.add_column(header)
 
@@ -75,7 +81,7 @@ def output_single(
         sys.stdout.write("\n")
         return
 
-    table = Table(title=title, show_header=False, show_lines=True, padding=(1, 1))
+    table = Table(title=title, show_header=False, show_lines=True, padding=(0, 1))
     table.add_column("Field", style="bold cyan", width=20)
     table.add_column("Value")
 
