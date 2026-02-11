@@ -8,9 +8,10 @@ import cyclopts
 from cyclopts import Parameter
 from plane.errors import PlaneError
 
+from planecli.api.async_sdk import paginate_all_async, run_sdk
 from planecli.api.client import get_client, get_workspace, handle_api_error
 from planecli.formatters import output, output_single
-from planecli.utils.resolve import resolve_cycle, resolve_project
+from planecli.utils.resolve import resolve_cycle_async, resolve_project_async
 
 cycle_app = cyclopts.App(
     name=["cycle", "cycles"],
@@ -53,7 +54,7 @@ ITEM_COLUMNS = [
 
 
 @cycle_app.command(name="list", alias="ls")
-def list_(
+async def list_(
     *,
     project: Annotated[str, Parameter(alias="-p")],
     sort: str = "created",
@@ -71,15 +72,13 @@ def list_(
     limit
         Maximum results to show.
     """
-    from planecli.utils.resolve import _paginate_all
-
     try:
         client = get_client()
         workspace = get_workspace()
-        proj = resolve_project(project, client, workspace)
+        proj = await resolve_project_async(project, client, workspace)
         project_id = proj["id"]
 
-        cycles = _paginate_all(client.cycles.list, workspace, project_id)
+        cycles = await paginate_all_async(client.cycles.list, workspace, project_id)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -95,7 +94,7 @@ def list_(
 
 
 @cycle_app.command(alias="read")
-def show(
+async def show(
     cycle: str,
     *,
     project: Annotated[str, Parameter(alias="-p")],
@@ -113,10 +112,10 @@ def show(
     try:
         client = get_client()
         workspace = get_workspace()
-        proj = resolve_project(project, client, workspace)
+        proj = await resolve_project_async(project, client, workspace)
         project_id = proj["id"]
 
-        data = resolve_cycle(cycle, client, workspace, project_id)
+        data = await resolve_cycle_async(cycle, client, workspace, project_id)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -124,7 +123,7 @@ def show(
 
 
 @cycle_app.command(alias="new")
-def create(
+async def create(
     name: str,
     *,
     project: Annotated[str, Parameter(alias="-p")],
@@ -148,16 +147,20 @@ def create(
     end_date
         End date (YYYY-MM-DD).
     """
+    import asyncio
+
     from plane.models.cycles import CreateCycle
 
     try:
         client = get_client()
         workspace = get_workspace()
-        proj = resolve_project(project, client, workspace)
-        project_id = proj["id"]
 
-        # Get current user as owner
-        me = client.users.get_me()
+        # Resolve project and get current user in parallel
+        proj, me = await asyncio.gather(
+            resolve_project_async(project, client, workspace),
+            run_sdk(client.users.get_me),
+        )
+        project_id = proj["id"]
 
         create_data = CreateCycle(name=name, owned_by=me.id, project_id=project_id)
         if description:
@@ -167,7 +170,7 @@ def create(
         if end_date:
             create_data.end_date = end_date
 
-        cycle = client.cycles.create(workspace, project_id, create_data)
+        cycle = await run_sdk(client.cycles.create, workspace, project_id, create_data)
         data = cycle.model_dump()
     except PlaneError as e:
         raise handle_api_error(e)
@@ -176,7 +179,7 @@ def create(
 
 
 @cycle_app.command
-def update(
+async def update(
     cycle: str,
     *,
     project: Annotated[str, Parameter(alias="-p")],
@@ -208,10 +211,10 @@ def update(
     try:
         client = get_client()
         workspace = get_workspace()
-        proj = resolve_project(project, client, workspace)
+        proj = await resolve_project_async(project, client, workspace)
         project_id = proj["id"]
 
-        cyc_data = resolve_cycle(cycle, client, workspace, project_id)
+        cyc_data = await resolve_cycle_async(cycle, client, workspace, project_id)
         cycle_id = cyc_data["id"]
 
         update_data = UpdateCycle()
@@ -224,7 +227,9 @@ def update(
         if end_date:
             update_data.end_date = end_date
 
-        updated = client.cycles.update(workspace, project_id, cycle_id, update_data)
+        updated = await run_sdk(
+            client.cycles.update, workspace, project_id, cycle_id, update_data
+        )
         data = updated.model_dump()
     except PlaneError as e:
         raise handle_api_error(e)
@@ -233,7 +238,7 @@ def update(
 
 
 @cycle_app.command
-def delete(
+async def delete(
     cycle: str,
     *,
     project: Annotated[str, Parameter(alias="-p")],
@@ -252,14 +257,14 @@ def delete(
     try:
         client = get_client()
         workspace = get_workspace()
-        proj = resolve_project(project, client, workspace)
+        proj = await resolve_project_async(project, client, workspace)
         project_id = proj["id"]
 
-        cyc_data = resolve_cycle(cycle, client, workspace, project_id)
+        cyc_data = await resolve_cycle_async(cycle, client, workspace, project_id)
         cycle_id = cyc_data["id"]
         cycle_name = cyc_data.get("name", cycle_id)
 
-        client.cycles.delete(workspace, project_id, cycle_id)
+        await run_sdk(client.cycles.delete, workspace, project_id, cycle_id)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -267,7 +272,7 @@ def delete(
 
 
 @cycle_app.command(name="add-item")
-def add_item(
+async def add_item(
     cycle: str,
     work_item: str,
     *,
@@ -284,22 +289,28 @@ def add_item(
     project
         Project name, identifier, or UUID.
     """
+    import asyncio
+
     from planecli.formatters import console
-    from planecli.utils.resolve import resolve_work_item
+    from planecli.utils.resolve import resolve_work_item_async
 
     try:
         client = get_client()
         workspace = get_workspace()
-        proj = resolve_project(project, client, workspace)
+        proj = await resolve_project_async(project, client, workspace)
         project_id = proj["id"]
 
-        cyc_data = resolve_cycle(cycle, client, workspace, project_id)
+        # Resolve cycle and work item in parallel
+        cyc_data, item = await asyncio.gather(
+            resolve_cycle_async(cycle, client, workspace, project_id),
+            resolve_work_item_async(work_item, client, workspace, project_id),
+        )
         cycle_id = cyc_data["id"]
-
-        item = resolve_work_item(work_item, client, workspace, project_id)
         item_id = item["id"]
 
-        client.cycles.add_work_items(workspace, project_id, cycle_id, [item_id])
+        await run_sdk(
+            client.cycles.add_work_items, workspace, project_id, cycle_id, [item_id]
+        )
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -307,7 +318,7 @@ def add_item(
 
 
 @cycle_app.command(name="remove-item")
-def remove_item(
+async def remove_item(
     cycle: str,
     work_item: str,
     *,
@@ -324,22 +335,28 @@ def remove_item(
     project
         Project name, identifier, or UUID.
     """
+    import asyncio
+
     from planecli.formatters import console
-    from planecli.utils.resolve import resolve_work_item
+    from planecli.utils.resolve import resolve_work_item_async
 
     try:
         client = get_client()
         workspace = get_workspace()
-        proj = resolve_project(project, client, workspace)
+        proj = await resolve_project_async(project, client, workspace)
         project_id = proj["id"]
 
-        cyc_data = resolve_cycle(cycle, client, workspace, project_id)
+        # Resolve cycle and work item in parallel
+        cyc_data, item = await asyncio.gather(
+            resolve_cycle_async(cycle, client, workspace, project_id),
+            resolve_work_item_async(work_item, client, workspace, project_id),
+        )
         cycle_id = cyc_data["id"]
-
-        item = resolve_work_item(work_item, client, workspace, project_id)
         item_id = item["id"]
 
-        client.cycles.remove_work_item(workspace, project_id, cycle_id, item_id)
+        await run_sdk(
+            client.cycles.remove_work_item, workspace, project_id, cycle_id, item_id
+        )
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -347,7 +364,7 @@ def remove_item(
 
 
 @cycle_app.command
-def items(
+async def items(
     cycle: str,
     *,
     project: Annotated[str, Parameter(alias="-p")],
@@ -368,13 +385,15 @@ def items(
     try:
         client = get_client()
         workspace = get_workspace()
-        proj = resolve_project(project, client, workspace)
+        proj = await resolve_project_async(project, client, workspace)
         project_id = proj["id"]
 
-        cyc_data = resolve_cycle(cycle, client, workspace, project_id)
+        cyc_data = await resolve_cycle_async(cycle, client, workspace, project_id)
         cycle_id = cyc_data["id"]
 
-        response = client.cycles.list_work_items(workspace, project_id, cycle_id)
+        response = await run_sdk(
+            client.cycles.list_work_items, workspace, project_id, cycle_id
+        )
         work_items = response.results if hasattr(response, "results") else []
     except PlaneError as e:
         raise handle_api_error(e)

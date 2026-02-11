@@ -40,16 +40,17 @@ app.command(cycle_app)
 
 # Top-level commands
 @app.command
-def whoami(*, json: bool = False) -> None:
+async def whoami(*, json: bool = False) -> None:
     """Show current authenticated user."""
     from plane.errors import PlaneError
 
+    from planecli.api.async_sdk import run_sdk
     from planecli.api.client import get_client, handle_api_error
     from planecli.formatters import output_single
 
     try:
         client = get_client()
-        me = client.users.get_me()
+        me = await run_sdk(client.users.get_me)
         data = me.model_dump()
     except PlaneError as e:
         raise handle_api_error(e)

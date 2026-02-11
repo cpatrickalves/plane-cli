@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated
 
 import cyclopts
 from cyclopts import Parameter
 from plane.errors import PlaneError
 
+from planecli.api.async_sdk import run_sdk
 from planecli.api.client import get_client, get_workspace, handle_api_error
 from planecli.formatters import output, output_single
-from planecli.utils.resolve import resolve_project
+from planecli.utils.resolve import resolve_project_async
 
 doc_app = cyclopts.App(
     name=["document", "documents", "doc", "docs"],
@@ -45,7 +47,7 @@ def _enrich_doc(data: dict) -> dict:
 
 
 @doc_app.command(name="list", alias="ls")
-def list_(
+async def list_(
     *,
     project: Annotated[str | None, Parameter(alias="-p")] = None,
     json: bool = False,
@@ -69,14 +71,16 @@ def list_(
         workspace = get_workspace()
 
         if project:
-            proj = resolve_project(project, client, workspace)
+            proj = await resolve_project_async(project, client, workspace)
             project_id = proj["id"]
             # Use direct API call since SDK doesn't have list_project_pages
             from planecli.api.client import get_config
             config = get_config()
             url = f"{config.base_url}/api/v1/workspaces/{workspace}/projects/{project_id}/pages/"
             headers = {"X-Api-Key": config.api_key}
-            resp = requests.get(url, headers=headers, timeout=30)
+            resp = await asyncio.to_thread(
+                requests.get, url, headers=headers, timeout=30
+            )
             resp.raise_for_status()
             resp_data = resp.json()
             # Handle paginated response
@@ -99,7 +103,7 @@ def list_(
 
 
 @doc_app.command(alias="read")
-def show(
+async def show(
     document: str,
     *,
     project: Annotated[str | None, Parameter(alias="-p")] = None,
@@ -119,11 +123,15 @@ def show(
         workspace = get_workspace()
 
         if project:
-            proj = resolve_project(project, client, workspace)
+            proj = await resolve_project_async(project, client, workspace)
             project_id = proj["id"]
-            page = client.pages.retrieve_project_page(workspace, project_id, document)
+            page = await run_sdk(
+                client.pages.retrieve_project_page, workspace, project_id, document
+            )
         else:
-            page = client.pages.retrieve_workspace_page(workspace, document)
+            page = await run_sdk(
+                client.pages.retrieve_workspace_page, workspace, document
+            )
 
         data = _enrich_doc(page.model_dump())
     except PlaneError as e:
@@ -133,7 +141,7 @@ def show(
 
 
 @doc_app.command(alias="new")
-def create(
+async def create(
     *,
     title: str,
     content: Annotated[str | None, Parameter(alias="-c")] = None,
@@ -162,11 +170,15 @@ def create(
             page_data.description_html = f"<p>{content}</p>"
 
         if project:
-            proj = resolve_project(project, client, workspace)
+            proj = await resolve_project_async(project, client, workspace)
             project_id = proj["id"]
-            page = client.pages.create_project_page(workspace, project_id, page_data)
+            page = await run_sdk(
+                client.pages.create_project_page, workspace, project_id, page_data
+            )
         else:
-            page = client.pages.create_workspace_page(workspace, page_data)
+            page = await run_sdk(
+                client.pages.create_workspace_page, workspace, page_data
+            )
 
         data = _enrich_doc(page.model_dump())
     except PlaneError as e:
@@ -176,7 +188,7 @@ def create(
 
 
 @doc_app.command
-def update(
+async def update(
     document: str,
     *,
     title: str | None = None,
@@ -214,7 +226,7 @@ def update(
             update_payload["description_html"] = f"<p>{content}</p>"
 
         if project:
-            proj = resolve_project(project, client, workspace)
+            proj = await resolve_project_async(project, client, workspace)
             project_id = proj["id"]
             base = f"{config.base_url}/api/v1/workspaces/{workspace}"
             url = f"{base}/projects/{project_id}/pages/{document}/"
@@ -222,7 +234,9 @@ def update(
             url = f"{config.base_url}/api/v1/workspaces/{workspace}/pages/{document}/"
 
         headers = {"X-Api-Key": config.api_key, "Content-Type": "application/json"}
-        resp = requests.patch(url, headers=headers, json=update_payload, timeout=30)
+        resp = await asyncio.to_thread(
+            requests.patch, url, headers=headers, json=update_payload, timeout=30
+        )
         resp.raise_for_status()
         data = _enrich_doc(resp.json())
     except PlaneError as e:
@@ -232,7 +246,7 @@ def update(
 
 
 @doc_app.command
-def delete(
+async def delete(
     document: str,
     *,
     project: Annotated[str | None, Parameter(alias="-p")] = None,
@@ -259,7 +273,7 @@ def delete(
         config = get_config()
 
         if project:
-            proj = resolve_project(project, client, workspace)
+            proj = await resolve_project_async(project, client, workspace)
             project_id = proj["id"]
             base = f"{config.base_url}/api/v1/workspaces/{workspace}"
             url = f"{base}/projects/{project_id}/pages/{document}/"
@@ -267,7 +281,9 @@ def delete(
             url = f"{config.base_url}/api/v1/workspaces/{workspace}/pages/{document}/"
 
         headers = {"X-Api-Key": config.api_key}
-        resp = requests.delete(url, headers=headers, timeout=30)
+        resp = await asyncio.to_thread(
+            requests.delete, url, headers=headers, timeout=30
+        )
         resp.raise_for_status()
     except PlaneError as e:
         raise handle_api_error(e)

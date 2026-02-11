@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -83,32 +83,46 @@ class TestWiList:
     @patch("planecli.commands.work_items.output")
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
-    def test_list_single_project(self, mock_get_client, mock_get_ws, mock_output):
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.commands.work_items.resolve_project_async")
+    @patch("planecli.commands.work_items.run_sdk")
+    @patch("planecli.commands.work_items.paginate_all_async")
+    async def test_list_single_project(
+        self,
+        mock_paginate,
+        mock_run_sdk,
+        mock_resolve_project,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_output,
+    ):
         """wi list -p Frontend should list items from one project only."""
         client = MagicMock()
         mock_get_client.return_value = client
 
-        # Members (workspace-scoped)
-        client.workspaces.get_members.return_value = [
+        # create_client returns a fresh client for parallel fetching
+        proj_client = MagicMock()
+        mock_create_client.return_value = proj_client
+
+        # Members (workspace-scoped) via run_sdk
+        mock_run_sdk.return_value = [
             _make_member("user-1", "Patrick", "Alves", "Patrick"),
         ]
 
         # Project resolution
         proj = _make_project("proj-1", "FE", "Frontend")
-        client.projects.list.return_value = _make_paginated_response([proj])
+        mock_resolve_project.return_value = proj.model_dump()
 
-        # Work items
+        # Work items, states, labels via paginate_all_async
         items = [_make_work_item("wi-1", "Fix bug", 1), _make_work_item("wi-2", "Add feature", 2)]
-        client.work_items.list.return_value = _make_paginated_response(items)
+        mock_paginate.side_effect = [
+            items,  # work items
+            [_make_state("state-uuid-1", "Todo")],  # states
+            [],  # labels
+        ]
 
-        # States & labels
-        client.states.list.return_value = _make_paginated_response(
-            [_make_state("state-uuid-1", "Todo")]
-        )
-        client.labels.list.return_value = _make_paginated_response([])
-
-        with patch("planecli.commands.work_items.resolve_project", return_value=proj.model_dump()):
-            list_(project="Frontend")
+        await list_(project="Frontend")
 
         mock_output.assert_called_once()
         call_args = mock_output.call_args
@@ -120,41 +134,49 @@ class TestWiList:
     @patch("planecli.commands.work_items.output")
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
-    def test_list_all_projects_no_flag(self, mock_get_client, mock_get_ws, mock_output):
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.commands.work_items.run_sdk")
+    @patch("planecli.commands.work_items.paginate_all_async")
+    async def test_list_all_projects_no_flag(
+        self,
+        mock_paginate,
+        mock_run_sdk,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_output,
+    ):
         """wi list without --project should list items from all projects."""
         client = MagicMock()
         mock_get_client.return_value = client
 
-        # Members
-        client.workspaces.get_members.return_value = [
+        proj_client = MagicMock()
+        mock_create_client.return_value = proj_client
+
+        # Members via run_sdk
+        mock_run_sdk.return_value = [
             _make_member("user-1", "Patrick", "Alves", "Patrick"),
         ]
 
         # Two projects
         proj1 = _make_project("proj-1", "FE", "Frontend")
         proj2 = _make_project("proj-2", "BE", "Backend")
-        client.projects.list.return_value = _make_paginated_response([proj1, proj2])
 
-        # Work items per project
         fe_items = [_make_work_item("wi-1", "Fix bug", 1)]
         be_items = [_make_work_item("wi-2", "Add API", 5)]
 
-        client.work_items.list.side_effect = [
-            _make_paginated_response(fe_items),
-            _make_paginated_response(be_items),
+        # paginate_all_async calls: projects, then per-project (items, states, labels) x2
+        mock_paginate.side_effect = [
+            [proj1, proj2],  # all projects
+            fe_items,  # FE items
+            [_make_state("state-uuid-1", "Todo")],  # FE states
+            [],  # FE labels
+            be_items,  # BE items
+            [_make_state("state-uuid-1", "In Progress")],  # BE states
+            [],  # BE labels
         ]
 
-        # States & labels per project
-        client.states.list.side_effect = [
-            _make_paginated_response([_make_state("state-uuid-1", "Todo")]),
-            _make_paginated_response([_make_state("state-uuid-1", "In Progress")]),
-        ]
-        client.labels.list.side_effect = [
-            _make_paginated_response([]),
-            _make_paginated_response([]),
-        ]
-
-        list_()
+        await list_()
 
         mock_output.assert_called_once()
         call_args = mock_output.call_args
@@ -169,22 +191,38 @@ class TestWiList:
     @patch("planecli.commands.work_items.output")
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
-    def test_list_all_projects_has_project_column(self, mock_get_client, mock_get_ws, mock_output):
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.commands.work_items.run_sdk")
+    @patch("planecli.commands.work_items.paginate_all_async")
+    async def test_list_all_projects_has_project_column(
+        self,
+        mock_paginate,
+        mock_run_sdk,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_output,
+    ):
         """All-projects output should include Project column (WI_COLUMNS_ALL)."""
         client = MagicMock()
         mock_get_client.return_value = client
 
-        client.workspaces.get_members.return_value = []
+        proj_client = MagicMock()
+        mock_create_client.return_value = proj_client
+
+        mock_run_sdk.return_value = []  # members
 
         proj = _make_project("proj-1", "FE", "Frontend")
-        client.projects.list.return_value = _make_paginated_response([proj])
 
         items = [_make_work_item("wi-1", "Fix bug", 1)]
-        client.work_items.list.return_value = _make_paginated_response(items)
-        client.states.list.return_value = _make_paginated_response([])
-        client.labels.list.return_value = _make_paginated_response([])
+        mock_paginate.side_effect = [
+            [proj],  # all projects
+            items,  # items
+            [],  # states
+            [],  # labels
+        ]
 
-        list_()
+        await list_()
 
         call_args = mock_output.call_args
         columns = call_args[0][1]
@@ -195,30 +233,41 @@ class TestWiList:
     @patch("planecli.commands.work_items.output")
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
-    def test_list_all_projects_empty_projects_skipped(
-        self, mock_get_client, mock_get_ws, mock_output
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.commands.work_items.run_sdk")
+    @patch("planecli.commands.work_items.paginate_all_async")
+    async def test_list_all_projects_empty_projects_skipped(
+        self,
+        mock_paginate,
+        mock_run_sdk,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_output,
     ):
         """Empty projects (no work items) should be silently skipped."""
         client = MagicMock()
         mock_get_client.return_value = client
 
-        client.workspaces.get_members.return_value = []
+        proj_client = MagicMock()
+        mock_create_client.return_value = proj_client
+
+        mock_run_sdk.return_value = []  # members
 
         proj1 = _make_project("proj-1", "FE", "Frontend")
         proj2 = _make_project("proj-2", "EMPTY", "Empty Project")
-        client.projects.list.return_value = _make_paginated_response([proj1, proj2])
 
-        # First project has items, second is empty
-        client.work_items.list.side_effect = [
-            _make_paginated_response([_make_work_item("wi-1", "Fix bug", 1)]),
-            _make_paginated_response([]),  # empty project
+        mock_paginate.side_effect = [
+            [proj1, proj2],  # all projects
+            [_make_work_item("wi-1", "Fix bug", 1)],  # FE items
+            [],  # FE states
+            [],  # FE labels
+            [],  # EMPTY items
+            [],  # EMPTY states
+            [],  # EMPTY labels
         ]
 
-        # Only first project needs states/labels (empty project skipped)
-        client.states.list.return_value = _make_paginated_response([])
-        client.labels.list.return_value = _make_paginated_response([])
-
-        list_()
+        await list_()
 
         call_args = mock_output.call_args
         data = call_args[0][0]
@@ -226,34 +275,49 @@ class TestWiList:
         assert data[0]["project_identifier"] == "FE"
 
     @patch("planecli.commands.work_items.output")
-    @patch("planecli.commands.work_items.resolve_user")
+    @patch("planecli.commands.work_items.resolve_user_async")
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
-    def test_list_all_projects_filter_by_assignee(
-        self, mock_get_client, mock_get_ws, mock_resolve_user, mock_output
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.commands.work_items.run_sdk")
+    @patch("planecli.commands.work_items.paginate_all_async")
+    async def test_list_all_projects_filter_by_assignee(
+        self,
+        mock_paginate,
+        mock_run_sdk,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_resolve_user,
+        mock_output,
     ):
         """--assignee filter should work across all projects."""
         client = MagicMock()
         mock_get_client.return_value = client
 
-        client.workspaces.get_members.return_value = [
+        proj_client = MagicMock()
+        mock_create_client.return_value = proj_client
+
+        mock_run_sdk.return_value = [
             _make_member("user-1", "Patrick", "Alves", "Patrick"),
         ]
 
         proj = _make_project("proj-1", "FE", "Frontend")
-        client.projects.list.return_value = _make_paginated_response([proj])
 
         items = [
             _make_work_item("wi-1", "Assigned to me", 1, assignees=["user-1"]),
             _make_work_item("wi-2", "Unassigned", 2, assignees=[]),
         ]
-        client.work_items.list.return_value = _make_paginated_response(items)
-        client.states.list.return_value = _make_paginated_response([])
-        client.labels.list.return_value = _make_paginated_response([])
+        mock_paginate.side_effect = [
+            [proj],  # all projects
+            items,  # items
+            [],  # states
+            [],  # labels
+        ]
 
         mock_resolve_user.return_value = {"id": "user-1", "display_name": "Patrick"}
 
-        list_(assignee="me")
+        await list_(assignee="me")
 
         call_args = mock_output.call_args
         data = call_args[0][0]
@@ -263,34 +327,41 @@ class TestWiList:
     @patch("planecli.commands.work_items.output")
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
-    def test_list_all_projects_filter_by_state(self, mock_get_client, mock_get_ws, mock_output):
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.commands.work_items.run_sdk")
+    @patch("planecli.commands.work_items.paginate_all_async")
+    async def test_list_all_projects_filter_by_state(
+        self,
+        mock_paginate,
+        mock_run_sdk,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_output,
+    ):
         """--state filter should work across all projects."""
         client = MagicMock()
         mock_get_client.return_value = client
 
-        client.workspaces.get_members.return_value = []
+        proj_client = MagicMock()
+        mock_create_client.return_value = proj_client
+
+        mock_run_sdk.return_value = []  # members
 
         proj1 = _make_project("proj-1", "FE", "Frontend")
         proj2 = _make_project("proj-2", "BE", "Backend")
-        client.projects.list.return_value = _make_paginated_response([proj1, proj2])
 
-        client.work_items.list.side_effect = [
-            _make_paginated_response([_make_work_item("wi-1", "FE task", 1, state="s-todo")]),
-            _make_paginated_response(
-                [_make_work_item("wi-2", "BE task", 2, state="s-progress")]
-            ),
+        mock_paginate.side_effect = [
+            [proj1, proj2],  # all projects
+            [_make_work_item("wi-1", "FE task", 1, state="s-todo")],  # FE items
+            [_make_state("s-todo", "Todo")],  # FE states
+            [],  # FE labels
+            [_make_work_item("wi-2", "BE task", 2, state="s-progress")],  # BE items
+            [_make_state("s-progress", "In Progress")],  # BE states
+            [],  # BE labels
         ]
 
-        client.states.list.side_effect = [
-            _make_paginated_response([_make_state("s-todo", "Todo")]),
-            _make_paginated_response([_make_state("s-progress", "In Progress")]),
-        ]
-        client.labels.list.side_effect = [
-            _make_paginated_response([]),
-            _make_paginated_response([]),
-        ]
-
-        list_(state="In Progress")
+        await list_(state="In Progress")
 
         call_args = mock_output.call_args
         data = call_args[0][0]
@@ -300,26 +371,42 @@ class TestWiList:
     @patch("planecli.commands.work_items.output")
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
-    def test_list_all_projects_sort_and_limit(self, mock_get_client, mock_get_ws, mock_output):
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.commands.work_items.run_sdk")
+    @patch("planecli.commands.work_items.paginate_all_async")
+    async def test_list_all_projects_sort_and_limit(
+        self,
+        mock_paginate,
+        mock_run_sdk,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_output,
+    ):
         """--sort and --limit should work across merged results."""
         client = MagicMock()
         mock_get_client.return_value = client
 
-        client.workspaces.get_members.return_value = []
+        proj_client = MagicMock()
+        mock_create_client.return_value = proj_client
+
+        mock_run_sdk.return_value = []  # members
 
         proj = _make_project("proj-1", "FE", "Frontend")
-        client.projects.list.return_value = _make_paginated_response([proj])
 
         items = [
             _make_work_item("wi-1", "Old item", 1, created_at="2026-02-01T12:00:00Z"),
             _make_work_item("wi-2", "New item", 2, created_at="2026-02-10T12:00:00Z"),
             _make_work_item("wi-3", "Mid item", 3, created_at="2026-02-05T12:00:00Z"),
         ]
-        client.work_items.list.return_value = _make_paginated_response(items)
-        client.states.list.return_value = _make_paginated_response([])
-        client.labels.list.return_value = _make_paginated_response([])
+        mock_paginate.side_effect = [
+            [proj],  # all projects
+            items,  # items
+            [],  # states
+            [],  # labels
+        ]
 
-        list_(limit=2)
+        await list_(limit=2)
 
         call_args = mock_output.call_args
         data = call_args[0][0]
@@ -331,22 +418,38 @@ class TestWiList:
     @patch("planecli.commands.work_items.output")
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
-    def test_list_all_projects_json_output(self, mock_get_client, mock_get_ws, mock_output):
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.commands.work_items.run_sdk")
+    @patch("planecli.commands.work_items.paginate_all_async")
+    async def test_list_all_projects_json_output(
+        self,
+        mock_paginate,
+        mock_run_sdk,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_output,
+    ):
         """--json flag should work with all-projects listing."""
         client = MagicMock()
         mock_get_client.return_value = client
 
-        client.workspaces.get_members.return_value = []
+        proj_client = MagicMock()
+        mock_create_client.return_value = proj_client
+
+        mock_run_sdk.return_value = []  # members
 
         proj = _make_project("proj-1", "FE", "Frontend")
-        client.projects.list.return_value = _make_paginated_response([proj])
 
         items = [_make_work_item("wi-1", "Fix bug", 1)]
-        client.work_items.list.return_value = _make_paginated_response(items)
-        client.states.list.return_value = _make_paginated_response([])
-        client.labels.list.return_value = _make_paginated_response([])
+        mock_paginate.side_effect = [
+            [proj],  # all projects
+            items,  # items
+            [],  # states
+            [],  # labels
+        ]
 
-        list_(json=True)
+        await list_(json=True)
 
         call_args = mock_output.call_args
         assert call_args[1]["as_json"] is True

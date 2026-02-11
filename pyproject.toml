@@ -39,6 +39,7 @@ packages = ["src/planecli"]
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pytest-asyncio>=0.24",
     "pytest-mock>=3.14",
     "ruff>=0.8",
 ]
@@ -52,3 +53,4 @@ select = ["E", "F", "I", "W"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"

@@ -8,9 +8,10 @@ import cyclopts
 from cyclopts import Parameter
 from plane.errors import PlaneError
 
+from planecli.api.async_sdk import paginate_all_async, run_sdk
 from planecli.api.client import get_client, get_workspace, handle_api_error
 from planecli.formatters import output, output_single
-from planecli.utils.resolve import resolve_project
+from planecli.utils.resolve import resolve_project_async
 
 project_app = cyclopts.App(
     name=["project", "projects"],
@@ -54,7 +55,7 @@ PROJECT_FIELDS = [
 
 
 @project_app.command(name="list", alias="ls")
-def list_(
+async def list_(
     *,
     state: Annotated[str | None, Parameter(alias="-s")] = None,
     limit: Annotated[int, Parameter(alias="-l")] = 50,
@@ -72,12 +73,10 @@ def list_(
     sort
         Sort order: linear (default), created, updated.
     """
-    from planecli.utils.resolve import _paginate_all
-
     try:
         client = get_client()
         workspace = get_workspace()
-        projects = _paginate_all(client.projects.list, workspace)
+        projects = await paginate_all_async(client.projects.list, workspace)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -111,7 +110,7 @@ def list_(
 
 
 @project_app.command(alias="read")
-def show(
+async def show(
     project: str,
     *,
     json: bool = False,
@@ -126,7 +125,7 @@ def show(
     try:
         client = get_client()
         workspace = get_workspace()
-        data = resolve_project(project, client, workspace)
+        data = await resolve_project_async(project, client, workspace)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -134,7 +133,7 @@ def show(
 
 
 @project_app.command(alias="new")
-def create(
+async def create(
     name: str,
     *,
     identifier: Annotated[str | None, Parameter(alias="-i")] = None,
@@ -164,7 +163,7 @@ def create(
         if description:
             create_data.description = description
 
-        project = client.projects.create(workspace, create_data)
+        project = await run_sdk(client.projects.create, workspace, create_data)
         data = project.model_dump()
     except PlaneError as e:
         raise handle_api_error(e)
@@ -173,7 +172,7 @@ def create(
 
 
 @project_app.command
-def update(
+async def update(
     project: str,
     *,
     name: str | None = None,
@@ -196,7 +195,7 @@ def update(
     try:
         client = get_client()
         workspace = get_workspace()
-        resolved = resolve_project(project, client, workspace)
+        resolved = await resolve_project_async(project, client, workspace)
         project_id = resolved["id"]
 
         update_data = UpdateProject()
@@ -205,7 +204,9 @@ def update(
         if description:
             update_data.description = description
 
-        updated = client.projects.update(workspace, project_id, update_data)
+        updated = await run_sdk(
+            client.projects.update, workspace, project_id, update_data
+        )
         data = updated.model_dump()
     except PlaneError as e:
         raise handle_api_error(e)
@@ -214,7 +215,7 @@ def update(
 
 
 @project_app.command
-def delete(project: str) -> None:
+async def delete(project: str) -> None:
     """Delete a project.
 
     Parameters
@@ -227,11 +228,11 @@ def delete(project: str) -> None:
     try:
         client = get_client()
         workspace = get_workspace()
-        resolved = resolve_project(project, client, workspace)
+        resolved = await resolve_project_async(project, client, workspace)
         project_id = resolved["id"]
         project_name = resolved.get("name", project_id)
 
-        client.projects.delete(workspace, project_id)
+        await run_sdk(client.projects.delete, workspace, project_id)
     except PlaneError as e:
         raise handle_api_error(e)
 

@@ -8,9 +8,10 @@ import cyclopts
 from cyclopts import Parameter
 from plane.errors import PlaneError
 
+from planecli.api.async_sdk import paginate_all_async, run_sdk
 from planecli.api.client import get_client, get_workspace, handle_api_error
 from planecli.formatters import output, output_single
-from planecli.utils.resolve import resolve_label, resolve_project
+from planecli.utils.resolve import resolve_label_async, resolve_project_async
 
 label_app = cyclopts.App(
     name=["label", "labels"],
@@ -37,7 +38,7 @@ LABEL_FIELDS = [
 
 
 @label_app.command(name="list", alias="ls")
-def list_(
+async def list_(
     *,
     project: Annotated[str, Parameter(alias="-p")],
     sort: str = "created",
@@ -55,15 +56,13 @@ def list_(
     limit
         Maximum results to show.
     """
-    from planecli.utils.resolve import _paginate_all
-
     try:
         client = get_client()
         workspace = get_workspace()
-        proj = resolve_project(project, client, workspace)
+        proj = await resolve_project_async(project, client, workspace)
         project_id = proj["id"]
 
-        labels = _paginate_all(client.labels.list, workspace, project_id)
+        labels = await paginate_all_async(client.labels.list, workspace, project_id)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -89,7 +88,7 @@ def list_(
 
 
 @label_app.command(alias="read")
-def show(
+async def show(
     label: str,
     *,
     project: Annotated[str, Parameter(alias="-p")],
@@ -107,10 +106,10 @@ def show(
     try:
         client = get_client()
         workspace = get_workspace()
-        proj = resolve_project(project, client, workspace)
+        proj = await resolve_project_async(project, client, workspace)
         project_id = proj["id"]
 
-        data = resolve_label(label, client, workspace, project_id)
+        data = await resolve_label_async(label, client, workspace, project_id)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -125,7 +124,7 @@ def show(
 
 
 @label_app.command(alias="new")
-def create(
+async def create(
     name: str,
     *,
     project: Annotated[str, Parameter(alias="-p")],
@@ -151,7 +150,7 @@ def create(
     try:
         client = get_client()
         workspace = get_workspace()
-        proj = resolve_project(project, client, workspace)
+        proj = await resolve_project_async(project, client, workspace)
         project_id = proj["id"]
 
         create_data = CreateLabel(name=name)
@@ -160,7 +159,7 @@ def create(
         if description:
             create_data.description = description
 
-        label = client.labels.create(workspace, project_id, create_data)
+        label = await run_sdk(client.labels.create, workspace, project_id, create_data)
         data = label.model_dump()
     except PlaneError as e:
         raise handle_api_error(e)
@@ -169,7 +168,7 @@ def create(
 
 
 @label_app.command
-def update(
+async def update(
     label: str,
     *,
     project: Annotated[str, Parameter(alias="-p")],
@@ -198,10 +197,10 @@ def update(
     try:
         client = get_client()
         workspace = get_workspace()
-        proj = resolve_project(project, client, workspace)
+        proj = await resolve_project_async(project, client, workspace)
         project_id = proj["id"]
 
-        lbl_data = resolve_label(label, client, workspace, project_id)
+        lbl_data = await resolve_label_async(label, client, workspace, project_id)
         label_id = lbl_data["id"]
 
         update_data = UpdateLabel()
@@ -212,7 +211,9 @@ def update(
         if description:
             update_data.description = description
 
-        updated = client.labels.update(workspace, project_id, label_id, update_data)
+        updated = await run_sdk(
+            client.labels.update, workspace, project_id, label_id, update_data
+        )
         data = updated.model_dump()
     except PlaneError as e:
         raise handle_api_error(e)
@@ -221,7 +222,7 @@ def update(
 
 
 @label_app.command
-def delete(
+async def delete(
     label: str,
     *,
     project: Annotated[str, Parameter(alias="-p")],
@@ -240,14 +241,14 @@ def delete(
     try:
         client = get_client()
         workspace = get_workspace()
-        proj = resolve_project(project, client, workspace)
+        proj = await resolve_project_async(project, client, workspace)
         project_id = proj["id"]
 
-        lbl_data = resolve_label(label, client, workspace, project_id)
+        lbl_data = await resolve_label_async(label, client, workspace, project_id)
         label_id = lbl_data["id"]
         label_name = lbl_data.get("name", label_id)
 
-        client.labels.delete(workspace, project_id, label_id)
+        await run_sdk(client.labels.delete, workspace, project_id, label_id)
     except PlaneError as e:
         raise handle_api_error(e)
 

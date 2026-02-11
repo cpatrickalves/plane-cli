@@ -8,9 +8,10 @@ import cyclopts
 from cyclopts import Parameter
 from plane.errors import PlaneError
 
+from planecli.api.async_sdk import paginate_all_async, run_sdk
 from planecli.api.client import get_client, get_workspace, handle_api_error
 from planecli.formatters import output, output_single
-from planecli.utils.resolve import resolve_project, resolve_state
+from planecli.utils.resolve import resolve_project_async, resolve_state_async
 
 state_app = cyclopts.App(
     name=["state", "states"],
@@ -40,7 +41,7 @@ STATE_FIELDS = [
 
 
 @state_app.command(name="list", alias="ls")
-def list_(
+async def list_(
     *,
     project: Annotated[str, Parameter(alias="-p")],
     group: str | None = None,
@@ -61,15 +62,13 @@ def list_(
     limit
         Maximum results to show.
     """
-    from planecli.utils.resolve import _paginate_all
-
     try:
         client = get_client()
         workspace = get_workspace()
-        proj = resolve_project(project, client, workspace)
+        proj = await resolve_project_async(project, client, workspace)
         project_id = proj["id"]
 
-        states = _paginate_all(client.states.list, workspace, project_id)
+        states = await paginate_all_async(client.states.list, workspace, project_id)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -104,7 +103,7 @@ def list_(
 
 
 @state_app.command(alias="read")
-def show(
+async def show(
     state: str,
     *,
     project: Annotated[str, Parameter(alias="-p")],
@@ -122,10 +121,10 @@ def show(
     try:
         client = get_client()
         workspace = get_workspace()
-        proj = resolve_project(project, client, workspace)
+        proj = await resolve_project_async(project, client, workspace)
         project_id = proj["id"]
 
-        data = resolve_state(state, client, workspace, project_id)
+        data = await resolve_state_async(state, client, workspace, project_id)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -140,7 +139,7 @@ def show(
 
 
 @state_app.command(alias="new")
-def create(
+async def create(
     name: str,
     *,
     project: Annotated[str, Parameter(alias="-p")],
@@ -169,7 +168,7 @@ def create(
     try:
         client = get_client()
         workspace = get_workspace()
-        proj = resolve_project(project, client, workspace)
+        proj = await resolve_project_async(project, client, workspace)
         project_id = proj["id"]
 
         create_data = CreateState(name=name, color=color)
@@ -178,7 +177,7 @@ def create(
         if group:
             create_data.group = group.lower()
 
-        state = client.states.create(workspace, project_id, create_data)
+        state = await run_sdk(client.states.create, workspace, project_id, create_data)
         data = state.model_dump()
     except PlaneError as e:
         raise handle_api_error(e)
@@ -187,7 +186,7 @@ def create(
 
 
 @state_app.command
-def update(
+async def update(
     state: str,
     *,
     project: Annotated[str, Parameter(alias="-p")],
@@ -219,10 +218,10 @@ def update(
     try:
         client = get_client()
         workspace = get_workspace()
-        proj = resolve_project(project, client, workspace)
+        proj = await resolve_project_async(project, client, workspace)
         project_id = proj["id"]
 
-        st_data = resolve_state(state, client, workspace, project_id)
+        st_data = await resolve_state_async(state, client, workspace, project_id)
         state_id = st_data["id"]
 
         update_data = UpdateState()
@@ -235,7 +234,9 @@ def update(
         if group:
             update_data.group = group.lower()
 
-        updated = client.states.update(workspace, project_id, state_id, update_data)
+        updated = await run_sdk(
+            client.states.update, workspace, project_id, state_id, update_data
+        )
         data = updated.model_dump()
     except PlaneError as e:
         raise handle_api_error(e)
@@ -244,7 +245,7 @@ def update(
 
 
 @state_app.command
-def delete(
+async def delete(
     state: str,
     *,
     project: Annotated[str, Parameter(alias="-p")],
@@ -263,14 +264,14 @@ def delete(
     try:
         client = get_client()
         workspace = get_workspace()
-        proj = resolve_project(project, client, workspace)
+        proj = await resolve_project_async(project, client, workspace)
         project_id = proj["id"]
 
-        st_data = resolve_state(state, client, workspace, project_id)
+        st_data = await resolve_state_async(state, client, workspace, project_id)
         state_id = st_data["id"]
         state_name = st_data.get("name", state_id)
 
-        client.states.delete(workspace, project_id, state_id)
+        await run_sdk(client.states.delete, workspace, project_id, state_id)
     except PlaneError as e:
         raise handle_api_error(e)
 

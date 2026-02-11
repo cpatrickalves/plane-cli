@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated
 
 import cyclopts
@@ -9,17 +10,18 @@ from cyclopts import Parameter
 from plane.errors import PlaneError
 from rich.text import Text
 
+from planecli.api.async_sdk import create_client, paginate_all_async, run_sdk
 from planecli.api.client import get_client, get_workspace, handle_api_error
 from planecli.formatters import output, output_single
 from planecli.utils.colors import PRIORITY_COLORS, colorize, lighten_hex
 from planecli.utils.resolve import (
-    resolve_label,
-    resolve_module,
-    resolve_project,
-    resolve_state,
-    resolve_user,
-    resolve_work_item,
-    resolve_work_item_across_projects,
+    resolve_label_async,
+    resolve_module_async,
+    resolve_project_async,
+    resolve_state_async,
+    resolve_user_async,
+    resolve_work_item_across_projects_async,
+    resolve_work_item_async,
 )
 
 wi_app = cyclopts.App(
@@ -174,8 +176,8 @@ def _enrich_work_item(
     return data
 
 
-def _resolve_project_id(project: str | None) -> str:
-    """Resolve project flag to a project UUID."""
+async def _resolve_project_id_async(project: str | None) -> str:
+    """Resolve project flag to a project UUID (async)."""
     from planecli.exceptions import ValidationError
 
     if not project:
@@ -185,12 +187,24 @@ def _resolve_project_id(project: str | None) -> str:
         )
     client = get_client()
     workspace = get_workspace()
-    resolved = resolve_project(project, client, workspace)
+    resolved = await resolve_project_async(project, client, workspace)
     return resolved["id"]
 
 
+async def _fetch_project_data(
+    client, workspace: str, project_id: str
+) -> tuple[list, list, list]:
+    """Fetch work items, states, and labels for a project in parallel."""
+    items, states, labels = await asyncio.gather(
+        paginate_all_async(client.work_items.list, workspace, project_id),
+        paginate_all_async(client.states.list, workspace, project_id),
+        paginate_all_async(client.labels.list, workspace, project_id),
+    )
+    return items, states, labels
+
+
 @wi_app.command(name="list", alias="ls")
-def list_(
+async def list_(
     *,
     project: Annotated[str | None, Parameter(alias="-p")] = None,
     assignee: str | None = None,
@@ -217,14 +231,12 @@ def list_(
     limit
         Maximum results to show.
     """
-    from planecli.utils.resolve import _paginate_all
-
     try:
         client = get_client()
         workspace = get_workspace()
 
         # Workspace-scoped: fetch members once
-        members = client.workspaces.get_members(workspace)
+        members = await run_sdk(client.workspaces.get_members, workspace)
         member_map = {}
         for m in members:
             if not m.id:
@@ -236,56 +248,79 @@ def list_(
             member_map[m.id] = full_name or m.display_name or ""
 
         if project:
-            # Single project path (existing behavior)
-            proj = resolve_project(project, client, workspace)
+            proj = await resolve_project_async(project, client, workspace)
             projects_to_list = [proj]
         else:
-            # All projects path
-            all_projects = _paginate_all(client.projects.list, workspace)
+            all_projects = await paginate_all_async(client.projects.list, workspace)
             projects_to_list = [p.model_dump() for p in all_projects]
 
+        # Fetch all projects in parallel (each project fetches items+states+labels in parallel)
         data = []
-        for proj in projects_to_list:
-            project_id = proj["id"]
-            proj_identifier = proj.get("identifier", "")
+        if projects_to_list:
+            # Use fresh client instances for parallel project fetching
+            async def _fetch_and_enrich(proj_dict: dict) -> list[dict]:
+                proj_client = create_client()
+                project_id = proj_dict["id"]
+                proj_identifier = proj_dict.get("identifier", "")
 
-            items = _paginate_all(client.work_items.list, workspace, project_id)
-            if not items:
-                continue
+                try:
+                    items, states, labels_list = await _fetch_project_data(
+                        proj_client, workspace, project_id
+                    )
+                except Exception:
+                    return []
 
-            # Per-project lookup maps (include color and group for enrichment)
-            states = _paginate_all(client.states.list, workspace, project_id)
-            state_map = {
-                s.id: {
-                    "name": s.name,
-                    "color": getattr(s, "color", None),
-                    "group": getattr(s, "group", None),
+                if not items:
+                    return []
+
+                state_map = {
+                    s.id: {
+                        "name": s.name,
+                        "color": getattr(s, "color", None),
+                        "group": getattr(s, "group", None),
+                    }
+                    for s in states if s.id and s.name
                 }
-                for s in states if s.id and s.name
-            }
-            labels_list = _paginate_all(client.labels.list, workspace, project_id)
-            label_map = {
-                lb.id: {"name": lb.name, "color": getattr(lb, "color", None)}
-                for lb in labels_list if lb.id and lb.name
-            }
+                label_map = {
+                    lb.id: {"name": lb.name, "color": getattr(lb, "color", None)}
+                    for lb in labels_list if lb.id and lb.name
+                }
 
-            for i in items:
-                enriched = _enrich_work_item(
-                    i.model_dump(),
-                    state_map=state_map,
-                    member_map=member_map,
-                    label_map=label_map,
-                    project_identifier=proj_identifier,
-                )
-                enriched["project_identifier"] = proj_identifier
-                data.append(enriched)
+                enriched_items = []
+                for i in items:
+                    enriched = _enrich_work_item(
+                        i.model_dump(),
+                        state_map=state_map,
+                        member_map=member_map,
+                        label_map=label_map,
+                        project_identifier=proj_identifier,
+                    )
+                    enriched["project_identifier"] = proj_identifier
+                    enriched_items.append(enriched)
+                return enriched_items
+
+            results = await asyncio.gather(
+                *[_fetch_and_enrich(p) for p in projects_to_list],
+                return_exceptions=True,
+            )
+
+            from planecli.formatters import console
+
+            for proj_dict, result in zip(projects_to_list, results):
+                if isinstance(result, Exception):
+                    console.print(
+                        f"[yellow]Warning: Failed to fetch "
+                        f"{proj_dict.get('identifier', proj_dict['id'])}: {result}[/]"
+                    )
+                    continue
+                data.extend(result)
     except PlaneError as e:
         raise handle_api_error(e)
 
     # Filter by assignee
     if assignee:
         try:
-            user = resolve_user(assignee, client, workspace)
+            user = await resolve_user_async(assignee, client, workspace)
             user_id = user["id"]
             data = [
                 d for d in data
@@ -318,7 +353,7 @@ def list_(
 
 
 @wi_app.command(alias="read")
-def show(
+async def show(
     issue: str,
     *,
     project: Annotated[str | None, Parameter(alias="-p")] = None,
@@ -338,10 +373,12 @@ def show(
         workspace = get_workspace()
 
         if project:
-            project_id = _resolve_project_id(project)
-            data = resolve_work_item(issue, client, workspace, project_id)
+            project_id = await _resolve_project_id_async(project)
+            data = await resolve_work_item_async(issue, client, workspace, project_id)
         else:
-            data, _ = resolve_work_item_across_projects(issue, client, workspace)
+            data, _ = await resolve_work_item_across_projects_async(
+                issue, client, workspace
+            )
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -350,7 +387,7 @@ def show(
 
 
 @wi_app.command(alias="new")
-def create(
+async def create(
     title: str,
     *,
     project: Annotated[str | None, Parameter(alias="-p")] = None,
@@ -394,7 +431,20 @@ def create(
     try:
         client = get_client()
         workspace = get_workspace()
-        project_id = _resolve_project_id(project)
+
+        # Resolve project and assignee in parallel (independent)
+        parallel_tasks = [_resolve_project_id_async(project)]
+        if assignee:
+            parallel_tasks.append(resolve_user_async(assignee, client, workspace))
+        if parent:
+            parallel_tasks.append(
+                resolve_work_item_across_projects_async(parent, client, workspace)
+            )
+
+        parallel_results = await asyncio.gather(*parallel_tasks)
+
+        project_id = parallel_results[0]
+        idx = 1
 
         create_data = CreateWorkItem(name=title)
 
@@ -408,39 +458,51 @@ def create(
         if estimate is not None:
             create_data.estimate_point = estimate
 
-        # Resolve assignee
         if assignee:
-            user = resolve_user(assignee, client, workspace)
+            user = parallel_results[idx]
             create_data.assignees = [user["id"]]
+            idx += 1
 
-        # Resolve state
-        if state:
-            state_data = resolve_state(state, client, workspace, project_id)
-            create_data.state = state_data["id"]
-
-        # Resolve labels
-        if labels:
-            label_ids = []
-            for label_name in labels.split(","):
-                label_name = label_name.strip()
-                if label_name:
-                    label_data = resolve_label(label_name, client, workspace, project_id)
-                    label_ids.append(label_data["id"])
-            if label_ids:
-                create_data.labels = label_ids
-
-        # Resolve parent
         if parent:
-            parent_data, _ = resolve_work_item_across_projects(parent, client, workspace)
+            parent_data, _ = parallel_results[idx]
             create_data.parent = parent_data["id"]
+            idx += 1
 
-        item = client.work_items.create(workspace, project_id, create_data)
+        # Resolve state and labels (depend on project_id) in parallel
+        dependent_tasks = []
+        if state:
+            dependent_tasks.append(
+                resolve_state_async(state, client, workspace, project_id)
+            )
+        if labels:
+            label_names = [ln.strip() for ln in labels.split(",") if ln.strip()]
+            dependent_tasks.extend(
+                resolve_label_async(ln, client, workspace, project_id)
+                for ln in label_names
+            )
+
+        if dependent_tasks:
+            dep_results = await asyncio.gather(*dependent_tasks)
+            dep_idx = 0
+            if state:
+                state_data = dep_results[dep_idx]
+                create_data.state = state_data["id"]
+                dep_idx += 1
+            if labels:
+                label_ids = [dep_results[i]["id"] for i in range(dep_idx, len(dep_results))]
+                if label_ids:
+                    create_data.labels = label_ids
+
+        item = await run_sdk(client.work_items.create, workspace, project_id, create_data)
         data = _enrich_work_item(item.model_dump())
 
         # Add to module if specified
         if module:
-            module_data = resolve_module(module, client, workspace, project_id)
-            client.modules.add_work_items(workspace, project_id, module_data["id"], [data["id"]])
+            module_data = await resolve_module_async(module, client, workspace, project_id)
+            await run_sdk(
+                client.modules.add_work_items,
+                workspace, project_id, module_data["id"], [data["id"]],
+            )
 
     except PlaneError as e:
         raise handle_api_error(e)
@@ -449,7 +511,7 @@ def create(
 
 
 @wi_app.command
-def update(
+async def update(
     issue: str,
     *,
     project: Annotated[str | None, Parameter(alias="-p")] = None,
@@ -493,10 +555,12 @@ def update(
 
         # Resolve the work item
         if project:
-            project_id = _resolve_project_id(project)
-            item_data = resolve_work_item(issue, client, workspace, project_id)
+            project_id = await _resolve_project_id_async(project)
+            item_data = await resolve_work_item_async(issue, client, workspace, project_id)
         else:
-            item_data, project_id = resolve_work_item_across_projects(issue, client, workspace)
+            item_data, project_id = await resolve_work_item_across_projects_async(
+                issue, client, workspace
+            )
 
         item_id = item_data["id"]
         update_data = UpdateWorkItem()
@@ -511,26 +575,52 @@ def update(
             priority_map = {"0": "none", "1": "urgent", "2": "high", "3": "medium", "4": "low"}
             update_data.priority = priority_map.get(priority, priority.lower())
 
-        if assignee:
-            user = resolve_user(assignee, client, workspace)
-            update_data.assignees = [user["id"]]
+        # Resolve assignee, state, and labels in parallel
+        parallel_tasks = []
+        task_keys = []
 
+        if assignee:
+            parallel_tasks.append(resolve_user_async(assignee, client, workspace))
+            task_keys.append("assignee")
         if state:
-            state_data = resolve_state(state, client, workspace, project_id)
-            update_data.state = state_data["id"]
+            parallel_tasks.append(
+                resolve_state_async(state, client, workspace, project_id)
+            )
+            task_keys.append("state")
+        if labels and not clear_labels:
+            label_names = [ln.strip() for ln in labels.split(",") if ln.strip()]
+            for ln in label_names:
+                parallel_tasks.append(
+                    resolve_label_async(ln, client, workspace, project_id)
+                )
+                task_keys.append("label")
+
+        if parallel_tasks:
+            results = await asyncio.gather(*parallel_tasks)
+            result_idx = 0
+            for key in task_keys:
+                if key == "assignee":
+                    update_data.assignees = [results[result_idx]["id"]]
+                elif key == "state":
+                    update_data.state = results[result_idx]["id"]
+                elif key == "label":
+                    pass  # handled below
+                result_idx += 1
+            # Collect label IDs
+            if labels and not clear_labels:
+                label_ids = [
+                    results[i]["id"]
+                    for i, k in enumerate(task_keys)
+                    if k == "label"
+                ]
+                update_data.labels = label_ids
 
         if clear_labels:
             update_data.labels = []
-        elif labels:
-            label_ids = []
-            for label_name in labels.split(","):
-                label_name = label_name.strip()
-                if label_name:
-                    label_data = resolve_label(label_name, client, workspace, project_id)
-                    label_ids.append(label_data["id"])
-            update_data.labels = label_ids
 
-        updated = client.work_items.update(workspace, project_id, item_id, update_data)
+        updated = await run_sdk(
+            client.work_items.update, workspace, project_id, item_id, update_data
+        )
         data = _enrich_work_item(updated.model_dump())
     except PlaneError as e:
         raise handle_api_error(e)
@@ -539,7 +629,7 @@ def update(
 
 
 @wi_app.command
-def delete(
+async def delete(
     issue: str,
     *,
     project: Annotated[str | None, Parameter(alias="-p")] = None,
@@ -560,15 +650,17 @@ def delete(
         workspace = get_workspace()
 
         if project:
-            project_id = _resolve_project_id(project)
-            item_data = resolve_work_item(issue, client, workspace, project_id)
+            project_id = await _resolve_project_id_async(project)
+            item_data = await resolve_work_item_async(issue, client, workspace, project_id)
         else:
-            item_data, project_id = resolve_work_item_across_projects(issue, client, workspace)
+            item_data, project_id = await resolve_work_item_across_projects_async(
+                issue, client, workspace
+            )
 
         item_id = item_data["id"]
         item_name = item_data.get("name", item_id)
 
-        client.work_items.delete(workspace, project_id, item_id)
+        await run_sdk(client.work_items.delete, workspace, project_id, item_id)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -576,7 +668,7 @@ def delete(
 
 
 @wi_app.command
-def search(
+async def search(
     query: str,
     *,
     project: Annotated[str | None, Parameter(alias="-p")] = None,
@@ -601,7 +693,7 @@ def search(
         client = get_client()
         workspace = get_workspace()
 
-        result = client.work_items.search(workspace, query)
+        result = await run_sdk(client.work_items.search, workspace, query)
         results_data = result.model_dump() if hasattr(result, "model_dump") else result
 
         # Extract work items from search results
@@ -620,7 +712,7 @@ def search(
 
 
 @wi_app.command
-def assign(
+async def assign(
     issue: str,
     *,
     assignee: Annotated[str, Parameter(name=["--assignee", "--assign"])] = "me",
@@ -646,16 +738,20 @@ def assign(
         workspace = get_workspace()
 
         if project:
-            project_id = _resolve_project_id(project)
-            item_data = resolve_work_item(issue, client, workspace, project_id)
+            project_id = await _resolve_project_id_async(project)
+            item_data = await resolve_work_item_async(issue, client, workspace, project_id)
         else:
-            item_data, project_id = resolve_work_item_across_projects(issue, client, workspace)
+            item_data, project_id = await resolve_work_item_across_projects_async(
+                issue, client, workspace
+            )
 
         item_id = item_data["id"]
-        user = resolve_user(assignee, client, workspace)
+        user = await resolve_user_async(assignee, client, workspace)
 
         update_data = UpdateWorkItem(assignees=[user["id"]])
-        client.work_items.update(workspace, project_id, item_id, update_data)
+        await run_sdk(
+            client.work_items.update, workspace, project_id, item_id, update_data
+        )
     except PlaneError as e:
         raise handle_api_error(e)
 

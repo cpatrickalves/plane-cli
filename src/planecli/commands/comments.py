@@ -8,9 +8,13 @@ import cyclopts
 from cyclopts import Parameter
 from plane.errors import PlaneError
 
+from planecli.api.async_sdk import run_sdk
 from planecli.api.client import get_client, get_workspace, handle_api_error
 from planecli.formatters import output, output_single
-from planecli.utils.resolve import resolve_work_item, resolve_work_item_across_projects
+from planecli.utils.resolve import (
+    resolve_work_item_across_projects_async,
+    resolve_work_item_async,
+)
 
 comment_app = cyclopts.App(
     name=["comment", "comments"],
@@ -46,7 +50,7 @@ def _enrich_comment(data: dict) -> dict:
 
 
 @comment_app.command(name="list", alias="ls")
-def list_(
+async def list_(
     issue: str,
     *,
     project: Annotated[str | None, Parameter(alias="-p")] = None,
@@ -69,15 +73,19 @@ def list_(
         workspace = get_workspace()
 
         if project:
-            from planecli.utils.resolve import resolve_project
-            proj = resolve_project(project, client, workspace)
+            from planecli.utils.resolve import resolve_project_async
+            proj = await resolve_project_async(project, client, workspace)
             project_id = proj["id"]
-            item = resolve_work_item(issue, client, workspace, project_id)
+            item = await resolve_work_item_async(issue, client, workspace, project_id)
         else:
-            item, project_id = resolve_work_item_across_projects(issue, client, workspace)
+            item, project_id = await resolve_work_item_across_projects_async(
+                issue, client, workspace
+            )
 
         item_id = item["id"]
-        response = client.work_items.comments.list(workspace, project_id, item_id)
+        response = await run_sdk(
+            client.work_items.comments.list, workspace, project_id, item_id
+        )
         comments = response.results if hasattr(response, "results") else []
     except PlaneError as e:
         raise handle_api_error(e)
@@ -88,7 +96,7 @@ def list_(
 
 
 @comment_app.command(alias="new")
-def create(
+async def create(
     issue: str,
     *,
     body: Annotated[str, Parameter(alias="-b")],
@@ -113,17 +121,22 @@ def create(
         workspace = get_workspace()
 
         if project:
-            from planecli.utils.resolve import resolve_project
-            proj = resolve_project(project, client, workspace)
+            from planecli.utils.resolve import resolve_project_async
+            proj = await resolve_project_async(project, client, workspace)
             project_id = proj["id"]
-            item = resolve_work_item(issue, client, workspace, project_id)
+            item = await resolve_work_item_async(issue, client, workspace, project_id)
         else:
-            item, project_id = resolve_work_item_across_projects(issue, client, workspace)
+            item, project_id = await resolve_work_item_across_projects_async(
+                issue, client, workspace
+            )
 
         item_id = item["id"]
 
         comment_data = CreateWorkItemComment(comment_html=f"<p>{body}</p>")
-        comment = client.work_items.comments.create(workspace, project_id, item_id, comment_data)
+        comment = await run_sdk(
+            client.work_items.comments.create,
+            workspace, project_id, item_id, comment_data,
+        )
         data = _enrich_comment(comment.model_dump())
     except PlaneError as e:
         raise handle_api_error(e)
@@ -136,7 +149,7 @@ def create(
 
 
 @comment_app.command
-def update(
+async def update(
     comment_id: str,
     *,
     issue: str,
@@ -164,18 +177,21 @@ def update(
         workspace = get_workspace()
 
         if project:
-            from planecli.utils.resolve import resolve_project
-            proj = resolve_project(project, client, workspace)
+            from planecli.utils.resolve import resolve_project_async
+            proj = await resolve_project_async(project, client, workspace)
             project_id = proj["id"]
-            item = resolve_work_item(issue, client, workspace, project_id)
+            item = await resolve_work_item_async(issue, client, workspace, project_id)
         else:
-            item, project_id = resolve_work_item_across_projects(issue, client, workspace)
+            item, project_id = await resolve_work_item_across_projects_async(
+                issue, client, workspace
+            )
 
         item_id = item["id"]
 
         update_data = UpdateWorkItemComment(comment_html=f"<p>{body}</p>")
-        comment = client.work_items.comments.update(
-            workspace, project_id, item_id, comment_id, update_data
+        comment = await run_sdk(
+            client.work_items.comments.update,
+            workspace, project_id, item_id, comment_id, update_data,
         )
         data = _enrich_comment(comment.model_dump())
     except PlaneError as e:
@@ -189,7 +205,7 @@ def update(
 
 
 @comment_app.command
-def delete(
+async def delete(
     comment_id: str,
     *,
     issue: str,
@@ -213,15 +229,20 @@ def delete(
         workspace = get_workspace()
 
         if project:
-            from planecli.utils.resolve import resolve_project
-            proj = resolve_project(project, client, workspace)
+            from planecli.utils.resolve import resolve_project_async
+            proj = await resolve_project_async(project, client, workspace)
             project_id = proj["id"]
-            item = resolve_work_item(issue, client, workspace, project_id)
+            item = await resolve_work_item_async(issue, client, workspace, project_id)
         else:
-            item, project_id = resolve_work_item_across_projects(issue, client, workspace)
+            item, project_id = await resolve_work_item_across_projects_async(
+                issue, client, workspace
+            )
 
         item_id = item["id"]
-        client.work_items.comments.delete(workspace, project_id, item_id, comment_id)
+        await run_sdk(
+            client.work_items.comments.delete,
+            workspace, project_id, item_id, comment_id,
+        )
     except PlaneError as e:
         raise handle_api_error(e)
 
