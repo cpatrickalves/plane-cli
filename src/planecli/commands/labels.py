@@ -161,6 +161,10 @@ async def create(
 
         label = await run_sdk(client.labels.create, workspace, project_id, create_data)
         data = label.model_dump()
+
+        from planecli.cache import invalidate_resource
+
+        await invalidate_resource("labels", workspace, project_id)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -215,6 +219,10 @@ async def update(
             client.labels.update, workspace, project_id, label_id, update_data
         )
         data = updated.model_dump()
+
+        from planecli.cache import invalidate_resource
+
+        await invalidate_resource("labels", workspace, project_id)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -249,6 +257,10 @@ async def delete(
         label_name = lbl_data.get("name", label_id)
 
         await run_sdk(client.labels.delete, workspace, project_id, label_id)
+
+        from planecli.cache import invalidate_resource
+
+        await invalidate_resource("labels", workspace, project_id)
     except PlaneError as e:
         raise handle_api_error(e)
 

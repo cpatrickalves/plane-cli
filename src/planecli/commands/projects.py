@@ -165,6 +165,10 @@ async def create(
 
         project = await run_sdk(client.projects.create, workspace, create_data)
         data = project.model_dump()
+
+        from planecli.cache import invalidate_resource
+
+        await invalidate_resource("projects", workspace)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -208,6 +212,10 @@ async def update(
             client.projects.update, workspace, project_id, update_data
         )
         data = updated.model_dump()
+
+        from planecli.cache import invalidate_resource
+
+        await invalidate_resource("projects", workspace)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -233,6 +241,10 @@ async def delete(project: str) -> None:
         project_name = resolved.get("name", project_id)
 
         await run_sdk(client.projects.delete, workspace, project_id)
+
+        from planecli.cache import invalidate_resource
+
+        await invalidate_resource("projects", workspace)
     except PlaneError as e:
         raise handle_api_error(e)
 

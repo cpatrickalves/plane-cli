@@ -24,6 +24,7 @@ dependencies = [
     "rich>=13.0",
     "rapidfuzz>=3.0",
     "plane-sdk",
+    "cashews[diskcache]>=7.0",
 ]
 
 [project.scripts]

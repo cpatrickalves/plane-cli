@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from planecli.utils.fuzzy import find_best_match, find_matches, FuzzyMatch
+from planecli.utils.fuzzy import find_best_match, find_matches
 
 
 class TestFindBestMatch:

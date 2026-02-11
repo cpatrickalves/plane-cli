@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from planecli.utils.resolve import _is_uuid, ISSUE_ID_PATTERN
+from planecli.utils.resolve import ISSUE_ID_PATTERN, _is_uuid
 
 
 class TestIsUUID:

@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from planecli.config import load_config, save_config, _read_config_file
+from planecli.config import _read_config_file, load_config, save_config
 from planecli.exceptions import AuthenticationError
 
 

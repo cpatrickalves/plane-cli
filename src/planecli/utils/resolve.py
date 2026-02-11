@@ -297,7 +297,8 @@ async def resolve_project_async(
     query: str, client: PlaneClient, workspace: str
 ) -> dict[str, Any]:
     """Async version of resolve_project."""
-    from planecli.api.async_sdk import paginate_all_async, run_sdk
+    from planecli.api.async_sdk import run_sdk
+    from planecli.cache import cached_list_projects
 
     if _is_uuid(query):
         try:
@@ -306,17 +307,17 @@ async def resolve_project_async(
         except HttpError:
             raise ResourceNotFoundError("Project", query)
 
-    projects = await paginate_all_async(client.projects.list, workspace)
+    projects = await cached_list_projects(workspace)
 
     for p in projects:
-        if hasattr(p, "identifier") and p.identifier and p.identifier.upper() == query.upper():
-            return p.model_dump()
+        if p.get("identifier", "").upper() == query.upper():
+            return p
 
-    match = find_best_match(query, projects, key=lambda p: p.name or "")
+    match = find_best_match(query, projects, key=lambda p: p.get("name", ""))
     if match:
-        return match.item.model_dump()
+        return match.item
 
-    suggestions = find_matches(query, projects, key=lambda p: p.name or "", threshold=30)
+    suggestions = find_matches(query, projects, key=lambda p: p.get("name", ""), threshold=30)
     if suggestions:
         names = ", ".join(f'"{m.matched_value}"' for m in suggestions[:3])
         raise ResourceNotFoundError("Project", f"{query} (did you mean: {names}?)")
@@ -364,7 +365,8 @@ async def resolve_work_item_across_projects_async(
     """Async version of resolve_work_item_across_projects."""
     import asyncio
 
-    from planecli.api.async_sdk import paginate_all_async, run_sdk
+    from planecli.api.async_sdk import run_sdk
+    from planecli.cache import cached_list_projects
 
     id_match = ISSUE_ID_PATTERN.match(query)
     if id_match:
@@ -381,12 +383,14 @@ async def resolve_work_item_across_projects_async(
             raise ResourceNotFoundError("Work item", query)
 
     if _is_uuid(query):
-        projects = await paginate_all_async(client.projects.list, workspace)
+        projects = await cached_list_projects(workspace)
 
-        async def _try_project(p: Any) -> tuple[dict[str, Any], str] | None:
+        async def _try_project(p: dict) -> tuple[dict[str, Any], str] | None:
             try:
-                item = await run_sdk(client.work_items.retrieve, workspace, p.id, query)
-                return item.model_dump(), p.id
+                item = await run_sdk(
+                    client.work_items.retrieve, workspace, p["id"], query
+                )
+                return item.model_dump(), p["id"]
             except HttpError:
                 return None
 
@@ -407,36 +411,37 @@ async def resolve_user_async(
 ) -> dict[str, Any]:
     """Async version of resolve_user."""
     from planecli.api.async_sdk import run_sdk
+    from planecli.cache import cached_list_members
 
     if query.lower() == "me":
         me = await run_sdk(client.users.get_me)
         return me.model_dump()
 
-    members = await run_sdk(client.workspaces.get_members, workspace)
+    members = await cached_list_members(workspace)
 
     if _is_uuid(query):
         for m in members:
-            if m.id == query:
-                return m.model_dump()
+            if m.get("id") == query:
+                return m
         raise ResourceNotFoundError("User", query)
 
     for m in members:
-        if hasattr(m, "email") and m.email and m.email.lower() == query.lower():
-            return m.model_dump()
+        if m.get("email", "").lower() == query.lower():
+            return m
 
-    def user_name(u: Any) -> str:
-        if hasattr(u, "display_name") and u.display_name:
-            return u.display_name
+    def user_name(u: dict) -> str:
+        if u.get("display_name"):
+            return u["display_name"]
         parts = []
-        if hasattr(u, "first_name") and u.first_name:
-            parts.append(u.first_name)
-        if hasattr(u, "last_name") and u.last_name:
-            parts.append(u.last_name)
+        if u.get("first_name"):
+            parts.append(u["first_name"])
+        if u.get("last_name"):
+            parts.append(u["last_name"])
         return " ".join(parts) if parts else ""
 
     match = find_best_match(query, members, key=user_name)
     if match:
-        return match.item.model_dump()
+        return match.item
 
     raise ResourceNotFoundError("User", query)
 
@@ -445,7 +450,8 @@ async def resolve_module_async(
     query: str, client: PlaneClient, workspace: str, project_id: str
 ) -> dict[str, Any]:
     """Async version of resolve_module."""
-    from planecli.api.async_sdk import paginate_all_async, run_sdk
+    from planecli.api.async_sdk import run_sdk
+    from planecli.cache import cached_list_modules
 
     if _is_uuid(query):
         try:
@@ -454,11 +460,11 @@ async def resolve_module_async(
         except HttpError:
             raise ResourceNotFoundError("Module", query)
 
-    modules = await paginate_all_async(client.modules.list, workspace, project_id)
+    modules = await cached_list_modules(workspace, project_id)
 
-    match = find_best_match(query, modules, key=lambda m: m.name or "")
+    match = find_best_match(query, modules, key=lambda m: m.get("name", ""))
     if match:
-        return match.item.model_dump()
+        return match.item
 
     raise ResourceNotFoundError("Module", query)
 
@@ -467,7 +473,8 @@ async def resolve_state_async(
     query: str, client: PlaneClient, workspace: str, project_id: str
 ) -> dict[str, Any]:
     """Async version of resolve_state."""
-    from planecli.api.async_sdk import paginate_all_async, run_sdk
+    from planecli.api.async_sdk import run_sdk
+    from planecli.cache import cached_list_states
 
     if _is_uuid(query):
         try:
@@ -476,11 +483,11 @@ async def resolve_state_async(
         except HttpError:
             raise ResourceNotFoundError("State", query)
 
-    states = await paginate_all_async(client.states.list, workspace, project_id)
+    states = await cached_list_states(workspace, project_id)
 
-    match = find_best_match(query, states, key=lambda s: s.name or "")
+    match = find_best_match(query, states, key=lambda s: s.get("name", ""))
     if match:
-        return match.item.model_dump()
+        return match.item
 
     raise ResourceNotFoundError("State", query)
 
@@ -489,7 +496,8 @@ async def resolve_cycle_async(
     query: str, client: PlaneClient, workspace: str, project_id: str
 ) -> dict[str, Any]:
     """Async version of resolve_cycle."""
-    from planecli.api.async_sdk import paginate_all_async, run_sdk
+    from planecli.api.async_sdk import run_sdk
+    from planecli.cache import cached_list_cycles
 
     if _is_uuid(query):
         try:
@@ -498,11 +506,11 @@ async def resolve_cycle_async(
         except HttpError:
             raise ResourceNotFoundError("Cycle", query)
 
-    cycles = await paginate_all_async(client.cycles.list, workspace, project_id)
+    cycles = await cached_list_cycles(workspace, project_id)
 
-    match = find_best_match(query, cycles, key=lambda c: c.name or "")
+    match = find_best_match(query, cycles, key=lambda c: c.get("name", ""))
     if match:
-        return match.item.model_dump()
+        return match.item
 
     raise ResourceNotFoundError("Cycle", query)
 
@@ -511,7 +519,8 @@ async def resolve_label_async(
     name: str, client: PlaneClient, workspace: str, project_id: str
 ) -> dict[str, Any]:
     """Async version of resolve_label."""
-    from planecli.api.async_sdk import paginate_all_async, run_sdk
+    from planecli.api.async_sdk import run_sdk
+    from planecli.cache import cached_list_labels
 
     if _is_uuid(name):
         try:
@@ -520,10 +529,10 @@ async def resolve_label_async(
         except HttpError:
             raise ResourceNotFoundError("Label", name)
 
-    labels = await paginate_all_async(client.labels.list, workspace, project_id)
+    labels = await cached_list_labels(workspace, project_id)
 
-    match = find_best_match(name, labels, key=lambda lbl: lbl.name or "")
+    match = find_best_match(name, labels, key=lambda lbl: lbl.get("name", ""))
     if match:
-        return match.item.model_dump()
+        return match.item
 
     raise ResourceNotFoundError("Label", name)

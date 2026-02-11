@@ -172,6 +172,10 @@ async def create(
 
         cycle = await run_sdk(client.cycles.create, workspace, project_id, create_data)
         data = cycle.model_dump()
+
+        from planecli.cache import invalidate_resource
+
+        await invalidate_resource("cycles", workspace, project_id)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -231,6 +235,10 @@ async def update(
             client.cycles.update, workspace, project_id, cycle_id, update_data
         )
         data = updated.model_dump()
+
+        from planecli.cache import invalidate_resource
+
+        await invalidate_resource("cycles", workspace, project_id)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -265,6 +273,10 @@ async def delete(
         cycle_name = cyc_data.get("name", cycle_id)
 
         await run_sdk(client.cycles.delete, workspace, project_id, cycle_id)
+
+        from planecli.cache import invalidate_resource
+
+        await invalidate_resource("cycles", workspace, project_id)
     except PlaneError as e:
         raise handle_api_error(e)
 

@@ -7,6 +7,18 @@ from unittest.mock import MagicMock
 import pytest
 
 
+@pytest.fixture(autouse=True)
+async def _setup_test_cache():
+    """Configure cashews with mem:// backend for all tests (no disk I/O)."""
+    from planecli.cache import cache, set_no_cache
+
+    cache.setup("mem://", size=1000)
+    set_no_cache(False)
+    yield
+    await cache.clear()
+    set_no_cache(False)
+
+
 @pytest.fixture
 def mock_plane_client():
     """Create a mock PlaneClient."""

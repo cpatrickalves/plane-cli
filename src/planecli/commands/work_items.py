@@ -193,12 +193,17 @@ async def _resolve_project_id_async(project: str | None) -> str:
 
 async def _fetch_project_data(
     client, workspace: str, project_id: str
-) -> tuple[list, list, list]:
-    """Fetch work items, states, and labels for a project in parallel."""
+) -> tuple[list, list[dict], list[dict]]:
+    """Fetch work items, states, and labels for a project in parallel.
+
+    Work items are fetched fresh (not cached). States and labels use the cache.
+    """
+    from planecli.cache import cached_list_labels, cached_list_states
+
     items, states, labels = await asyncio.gather(
         paginate_all_async(client.work_items.list, workspace, project_id),
-        paginate_all_async(client.states.list, workspace, project_id),
-        paginate_all_async(client.labels.list, workspace, project_id),
+        cached_list_states(workspace, project_id),
+        cached_list_labels(workspace, project_id),
     )
     return items, states, labels
 
@@ -235,24 +240,25 @@ async def list_(
         client = get_client()
         workspace = get_workspace()
 
-        # Workspace-scoped: fetch members once
-        members = await run_sdk(client.workspaces.get_members, workspace)
+        # Workspace-scoped: fetch members once (cached)
+        from planecli.cache import cached_list_members, cached_list_projects
+
+        members = await cached_list_members(workspace)
         member_map = {}
         for m in members:
-            if not m.id:
+            if not m.get("id"):
                 continue
             full_name = " ".join(
-                p for p in [getattr(m, "first_name", ""), getattr(m, "last_name", "")]
+                p for p in [m.get("first_name", ""), m.get("last_name", "")]
                 if p
             )
-            member_map[m.id] = full_name or m.display_name or ""
+            member_map[m["id"]] = full_name or m.get("display_name", "")
 
         if project:
             proj = await resolve_project_async(project, client, workspace)
             projects_to_list = [proj]
         else:
-            all_projects = await paginate_all_async(client.projects.list, workspace)
-            projects_to_list = [p.model_dump() for p in all_projects]
+            projects_to_list = await cached_list_projects(workspace)
 
         # Fetch all projects in parallel (each project fetches items+states+labels in parallel)
         data = []
@@ -273,17 +279,18 @@ async def list_(
                 if not items:
                     return []
 
+                # states and labels are already dicts (from cache)
                 state_map = {
-                    s.id: {
-                        "name": s.name,
-                        "color": getattr(s, "color", None),
-                        "group": getattr(s, "group", None),
+                    s["id"]: {
+                        "name": s.get("name"),
+                        "color": s.get("color"),
+                        "group": s.get("group"),
                     }
-                    for s in states if s.id and s.name
+                    for s in states if s.get("id") and s.get("name")
                 }
                 label_map = {
-                    lb.id: {"name": lb.name, "color": getattr(lb, "color", None)}
-                    for lb in labels_list if lb.id and lb.name
+                    lb["id"]: {"name": lb.get("name"), "color": lb.get("color")}
+                    for lb in labels_list if lb.get("id") and lb.get("name")
                 }
 
                 enriched_items = []
