@@ -1,7 +1,5 @@
 # PlaneCLI
 
-## Overview
-
 PlaneCLI is a command-line interface for [Plane.so](https://plane.so), an open-source project management tool. The CLI allows you to manage projects, work items, modules, documents, comments, and users directly from the terminal, without needing to access the web interface.
 
 The main differentiator of PlaneCLI is its intelligent resource resolution via **fuzzy search**: you can reference any resource by name, identifier (e.g. `ABC-123`), or UUID, and the CLI automatically finds the closest match. All commands support formatted table output (default) or JSON for integration with other tools.
@@ -183,6 +181,25 @@ planecli wi list --sort updated --limit 10
 | Subcommand `list` | `ls` |
 | Subcommand `read` | `show` |
 | Subcommand `create` | `new` |
+
+## Development
+
+A `Makefile` is provided with common development tasks. Run `make help` to see all available commands:
+
+```bash
+make help            # Show all available commands
+make install         # Install dependencies (dev environment)
+make install-tool    # Install CLI system-wide (editable)
+make test            # Run tests
+make test-v          # Run tests (verbose)
+make lint            # Run linter
+make lint-fix        # Run linter with auto-fix
+make format          # Format code using ruff formatter
+make check           # Run lint + tests
+make build           # Build distribution packages
+make clean           # Remove build artifacts and caches
+make run ARGS="..."  # Run the CLI with arguments
+```
 
 ## Notes and Restrictions
 
