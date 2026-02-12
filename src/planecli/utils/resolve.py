@@ -112,24 +112,27 @@ def resolve_work_item(
     Returns the work item as a dict.
     """
     # Try UUID direct lookup
+    # NOTE: Use raw _get() to bypass WorkItemDetail Pydantic validation which
+    # fails because the API returns assignees/labels as UUID strings, not objects.
+    # See: https://github.com/makeplane/plane-python-sdk/issues/XXX
     if _is_uuid(query):
         try:
-            item = client.work_items.retrieve(workspace, project_id, query)
-            return item.model_dump()
+            return client.work_items._get(
+                f"{workspace}/projects/{project_id}/work-items/{query}"
+            )
         except HttpError as e:
             _reraise_if_retryable(e)
             raise ResourceNotFoundError("Work item", query)
 
-    # Try identifier pattern (ABC-123) using SDK's retrieve_by_identifier
+    # Try identifier pattern (ABC-123)
     id_match = ISSUE_ID_PATTERN.match(query)
     if id_match:
         project_identifier = id_match.group(1).upper()
         issue_number = int(id_match.group(2))
         try:
-            item = client.work_items.retrieve_by_identifier(
-                workspace, project_identifier, issue_number
+            return client.work_items._get(
+                f"{workspace}/work-items/{project_identifier}-{issue_number}"
             )
-            return item.model_dump()
         except HttpError as e:
             _reraise_if_retryable(e)
             raise ResourceNotFoundError("Work item", query)
@@ -152,16 +155,17 @@ def resolve_work_item_across_projects(
     For identifier patterns (ABC-123), extracts the project identifier and resolves directly.
     Returns (work_item_dict, project_id).
     """
-    # Identifier pattern resolves directly via SDK
+    # Identifier pattern resolves directly via raw HTTP
+    # NOTE: Use raw _get() to bypass WorkItemDetail Pydantic validation which
+    # fails because the API returns assignees/labels as UUID strings, not objects.
     id_match = ISSUE_ID_PATTERN.match(query)
     if id_match:
         project_identifier = id_match.group(1).upper()
         issue_number = int(id_match.group(2))
         try:
-            item = client.work_items.retrieve_by_identifier(
-                workspace, project_identifier, issue_number
+            item_dict = client.work_items._get(
+                f"{workspace}/work-items/{project_identifier}-{issue_number}"
             )
-            item_dict = item.model_dump()
             return item_dict, item_dict.get("project", "")
         except HttpError as e:
             _reraise_if_retryable(e)
@@ -173,8 +177,10 @@ def resolve_work_item_across_projects(
         projects = _paginate_all(client.projects.list, workspace)
         for p in projects:
             try:
-                item = client.work_items.retrieve(workspace, p.id, query)
-                return item.model_dump(), p.id
+                item_dict = client.work_items._get(
+                    f"{workspace}/projects/{p.id}/work-items/{query}"
+                )
+                return item_dict, p.id
             except HttpError as e:
                 _reraise_if_retryable(e)
                 continue
@@ -367,10 +373,14 @@ async def resolve_work_item_async(
     """Async version of resolve_work_item."""
     from planecli.api.async_sdk import paginate_all_async, run_sdk
 
+    # NOTE: Use raw _get() to bypass WorkItemDetail Pydantic validation which
+    # fails because the API returns assignees/labels as UUID strings, not objects.
     if _is_uuid(query):
         try:
-            item = await run_sdk(client.work_items.retrieve, workspace, project_id, query)
-            return item.model_dump()
+            return await run_sdk(
+                client.work_items._get,
+                f"{workspace}/projects/{project_id}/work-items/{query}",
+            )
         except HttpError as e:
             _reraise_if_retryable(e)
             raise ResourceNotFoundError("Work item", query)
@@ -380,11 +390,10 @@ async def resolve_work_item_async(
         project_identifier = id_match.group(1).upper()
         issue_number = int(id_match.group(2))
         try:
-            item = await run_sdk(
-                client.work_items.retrieve_by_identifier,
-                workspace, project_identifier, issue_number,
+            return await run_sdk(
+                client.work_items._get,
+                f"{workspace}/work-items/{project_identifier}-{issue_number}",
             )
-            return item.model_dump()
         except HttpError as e:
             _reraise_if_retryable(e)
             raise ResourceNotFoundError("Work item", query)
@@ -407,16 +416,17 @@ async def resolve_work_item_across_projects_async(
     from planecli.api.async_sdk import run_sdk
     from planecli.cache import cached_list_projects
 
+    # NOTE: Use raw _get() to bypass WorkItemDetail Pydantic validation which
+    # fails because the API returns assignees/labels as UUID strings, not objects.
     id_match = ISSUE_ID_PATTERN.match(query)
     if id_match:
         project_identifier = id_match.group(1).upper()
         issue_number = int(id_match.group(2))
         try:
-            item = await run_sdk(
-                client.work_items.retrieve_by_identifier,
-                workspace, project_identifier, issue_number,
+            item_dict = await run_sdk(
+                client.work_items._get,
+                f"{workspace}/work-items/{project_identifier}-{issue_number}",
             )
-            item_dict = item.model_dump()
             return item_dict, item_dict.get("project", "")
         except HttpError as e:
             _reraise_if_retryable(e)
@@ -427,10 +437,11 @@ async def resolve_work_item_across_projects_async(
 
         async def _try_project(p: dict) -> tuple[dict[str, Any], str] | None:
             try:
-                item = await run_sdk(
-                    client.work_items.retrieve, workspace, p["id"], query
+                item_dict = await run_sdk(
+                    client.work_items._get,
+                    f"{workspace}/projects/{p['id']}/work-items/{query}",
                 )
-                return item.model_dump(), p["id"]
+                return item_dict, p["id"]
             except HttpError as e:
                 _reraise_if_retryable(e)
                 return None
