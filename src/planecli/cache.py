@@ -167,6 +167,41 @@ async def cached_list_labels(workspace: str, project_id: str) -> list[dict[str, 
     return await _cached_list(key, TTL_CONFIG, _fetch)
 
 
+async def cached_list_estimate_points(
+    workspace: str, project_id: str
+) -> list[dict[str, Any]]:
+    """Fetch estimate points by expanding them from work items (TTL: 10m).
+
+    Plane's external API has no dedicated endpoint for estimate points.
+    Instead, we fetch work items with expand=estimate_point and extract
+    the unique {id, value} pairs from the expanded data.
+    """
+    from planecli.api.async_sdk import create_client, run_sdk
+
+    key = _cache_key("estimate_points", workspace, project_id)
+
+    async def _fetch() -> list[Any]:
+        # Use raw _get() to bypass SDK Pydantic validation which fails
+        # when estimate_point is expanded from str to dict.
+        client = create_client()
+        raw = await run_sdk(
+            client.work_items._get,
+            f"{workspace}/projects/{project_id}/work-items",
+            {"expand": "estimate_point", "per_page": "100"},
+        )
+        items = raw.get("results", []) if isinstance(raw, dict) else raw
+
+        seen: dict[str, str] = {}
+        for item in items:
+            ep = item.get("estimate_point")
+            if isinstance(ep, dict) and ep.get("id") and ep.get("value"):
+                seen[ep["id"]] = ep["value"]
+
+        return [{"id": uid, "value": val} for uid, val in seen.items()]
+
+    return await _cached_list(key, TTL_CONFIG, _fetch)
+
+
 async def cached_list_work_items(workspace: str, project_id: str) -> list[dict[str, Any]]:
     """Fetch work items with short-lived caching (TTL: 2m).
 

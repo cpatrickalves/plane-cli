@@ -568,6 +568,30 @@ async def resolve_cycle_async(
     raise ResourceNotFoundError("Cycle", query)
 
 
+async def resolve_estimate_point_async(
+    value: str, workspace: str, project_id: str
+) -> dict[str, Any]:
+    """Resolve an estimate value (e.g. "3") to its estimate point UUID.
+
+    Plane stores estimate points as UUIDs. This looks up the UUID for a given
+    point value by fetching the project's estimate points (discovered from
+    work items with expand=estimate_point).
+
+    Returns dict with "id" and "value" keys.
+    """
+    from planecli.cache import cached_list_estimate_points
+
+    points = await cached_list_estimate_points(workspace, project_id)
+
+    for pt in points:
+        if pt.get("value") == value:
+            return pt
+
+    available = sorted(pt.get("value", "?") for pt in points)
+    hint = f"Available values: {', '.join(available)}" if available else "No estimate points configured"
+    raise ResourceNotFoundError("Estimate point", f"{value} ({hint})")
+
+
 async def resolve_label_async(
     name: str, client: PlaneClient, workspace: str, project_id: str
 ) -> dict[str, Any]:

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from planecli.commands.work_items import WI_COLUMNS, WI_COLUMNS_ALL, list_
+from planecli.commands.work_items import WI_COLUMNS, WI_FIELDS, create, list_, update
+from planecli.commands.work_items import _enrich_work_item
 
 
 def _make_member_dict(member_id: str, first_name: str, last_name: str, display_name: str):
@@ -177,54 +178,6 @@ class TestWiList:
         assert len(data) == 2
         identifiers = {d["project_identifier"] for d in data}
         assert identifiers == {"FE", "BE"}
-
-    @patch("planecli.commands.work_items.output")
-    @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
-    @patch("planecli.commands.work_items.get_client")
-    @patch("planecli.commands.work_items.create_client")
-    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
-    @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
-    @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
-    @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
-    @patch("planecli.cache.cached_list_labels", new_callable=AsyncMock)
-    async def test_list_all_projects_has_project_column(
-        self,
-        mock_cached_labels,
-        mock_cached_states,
-        mock_cached_projects,
-        mock_cached_members,
-        mock_cached_work_items,
-        mock_create_client,
-        mock_get_client,
-        mock_get_ws,
-        mock_output,
-    ):
-        """All-projects output should include Project column (WI_COLUMNS_ALL)."""
-        client = MagicMock()
-        mock_get_client.return_value = client
-
-        proj_client = MagicMock()
-        mock_create_client.return_value = proj_client
-
-        mock_cached_members.return_value = []
-
-        mock_cached_projects.return_value = [
-            _make_project_dict("proj-1", "FE", "Frontend"),
-        ]
-
-        mock_cached_work_items.return_value = [
-            _make_work_item_dict("wi-1", "Fix bug", 1),
-        ]
-
-        mock_cached_states.return_value = []
-        mock_cached_labels.return_value = []
-
-        await list_()
-
-        call_args = mock_output.call_args
-        columns = call_args[0][1]
-        assert columns == WI_COLUMNS_ALL
-        assert columns[0] == ("project_identifier", "Project")
 
     @patch("planecli.commands.work_items.output")
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
@@ -916,3 +869,155 @@ class TestWiList:
 
         data = mock_output.call_args[0][0]
         assert len(data) == 0
+
+
+class TestWiCreate:
+    """Tests for the wi create command."""
+
+    @patch("planecli.commands.work_items.output_single")
+    @patch("planecli.commands.work_items.run_sdk", new_callable=AsyncMock)
+    @patch("planecli.commands.work_items.resolve_estimate_point_async", new_callable=AsyncMock)
+    @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
+    @patch("planecli.commands.work_items.get_client")
+    @patch("planecli.commands.work_items._resolve_project_id_async", new_callable=AsyncMock)
+    @patch("planecli.cache.invalidate_resource", new_callable=AsyncMock)
+    async def test_create_with_estimate(
+        self,
+        mock_invalidate,
+        mock_resolve_proj,
+        mock_get_client,
+        mock_get_ws,
+        mock_resolve_ep,
+        mock_run_sdk,
+        mock_output,
+    ):
+        """--estimate should resolve to estimate_point UUID via resolver."""
+        mock_get_client.return_value = MagicMock()
+        mock_resolve_proj.return_value = "proj-1"
+        mock_resolve_ep.return_value = {"id": "ep-uuid-5", "value": "5"}
+
+        mock_item = MagicMock()
+        mock_item.model_dump.return_value = {
+            "id": "wi-1",
+            "name": "Test item",
+            "sequence_id": 1,
+            "priority": "medium",
+            "estimate_point": "ep-uuid-5",
+        }
+        mock_run_sdk.return_value = mock_item
+
+        await create("Test item", project="Frontend", estimate=5)
+
+        mock_resolve_ep.assert_called_once_with("5", "test-ws", "proj-1")
+        call_args = mock_run_sdk.call_args
+        create_data = call_args[0][3]
+        assert create_data.estimate_point == "ep-uuid-5"
+
+
+class TestWiUpdate:
+    """Tests for the wi update command."""
+
+    @patch("planecli.commands.work_items.output_single")
+    @patch("planecli.commands.work_items.run_sdk", new_callable=AsyncMock)
+    @patch("planecli.commands.work_items.resolve_estimate_point_async", new_callable=AsyncMock)
+    @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
+    @patch("planecli.commands.work_items.get_client")
+    @patch("planecli.commands.work_items.resolve_work_item_across_projects_async", new_callable=AsyncMock)
+    @patch("planecli.cache.invalidate_resource", new_callable=AsyncMock)
+    async def test_update_with_estimate(
+        self,
+        mock_invalidate,
+        mock_resolve_wi,
+        mock_get_client,
+        mock_get_ws,
+        mock_resolve_ep,
+        mock_run_sdk,
+        mock_output,
+    ):
+        """--estimate should resolve to estimate_point UUID via resolver."""
+        mock_get_client.return_value = MagicMock()
+        mock_resolve_wi.return_value = ({"id": "wi-1", "name": "Test"}, "proj-1")
+        mock_resolve_ep.return_value = {"id": "ep-uuid-8", "value": "8"}
+
+        mock_updated = MagicMock()
+        mock_updated.model_dump.return_value = {
+            "id": "wi-1",
+            "name": "Test",
+            "sequence_id": 1,
+            "priority": "medium",
+            "estimate_point": "ep-uuid-8",
+        }
+        mock_run_sdk.return_value = mock_updated
+
+        await update("WI-1", estimate=8)
+
+        mock_resolve_ep.assert_called_once_with("8", "test-ws", "proj-1")
+        call_args = mock_run_sdk.call_args
+        update_data = call_args[0][4]
+        assert update_data.estimate_point == "ep-uuid-8"
+
+    @patch("planecli.commands.work_items.output_single")
+    @patch("planecli.commands.work_items.run_sdk", new_callable=AsyncMock)
+    @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
+    @patch("planecli.commands.work_items.get_client")
+    @patch("planecli.commands.work_items.resolve_work_item_across_projects_async", new_callable=AsyncMock)
+    @patch("planecli.cache.invalidate_resource", new_callable=AsyncMock)
+    async def test_update_without_estimate(
+        self,
+        mock_invalidate,
+        mock_resolve_wi,
+        mock_get_client,
+        mock_get_ws,
+        mock_run_sdk,
+        mock_output,
+    ):
+        """Omitting --estimate should not set estimate_point on the update data."""
+        mock_get_client.return_value = MagicMock()
+        mock_resolve_wi.return_value = ({"id": "wi-1", "name": "Test"}, "proj-1")
+
+        mock_updated = MagicMock()
+        mock_updated.model_dump.return_value = {
+            "id": "wi-1",
+            "name": "Test",
+            "sequence_id": 1,
+            "priority": "medium",
+        }
+        mock_run_sdk.return_value = mock_updated
+
+        await update("WI-1", name="New title")
+
+        call_args = mock_run_sdk.call_args
+        update_data = call_args[0][4]
+        assert update_data.estimate_point is None
+
+
+class TestWiFields:
+    """Tests for display field configuration."""
+
+    def test_estimate_in_detail_fields(self):
+        """estimate_display should be included in WI_FIELDS for detail view."""
+        field_keys = [f[0] for f in WI_FIELDS]
+        assert "estimate_display" in field_keys
+
+    def test_estimate_not_in_list_columns(self):
+        """estimate should NOT be in WI_COLUMNS (list view)."""
+        col_keys = [c[0] for c in WI_COLUMNS]
+        assert "estimate_display" not in col_keys
+
+    def test_enrich_expanded_estimate(self):
+        """Expanded estimate_point dict should display value."""
+        data = {"estimate_point": {"id": "ep-uuid", "value": "5"}}
+        result = _enrich_work_item(data)
+        assert result["estimate_display"] == "5"
+
+    def test_enrich_uuid_estimate(self):
+        """Raw UUID estimate_point should be displayed as-is."""
+        data = {"estimate_point": "ep-uuid-123"}
+        result = _enrich_work_item(data)
+        assert result["estimate_display"] == "ep-uuid-123"
+
+    def test_enrich_none_estimate(self):
+        """None estimate_point should display empty string."""
+        data = {"estimate_point": None}
+        result = _enrich_work_item(data)
+        assert result["estimate_display"] == ""

@@ -15,6 +15,7 @@ from planecli.api.client import get_client, get_workspace, handle_api_error
 from planecli.formatters import output, output_single
 from planecli.utils.colors import PRIORITY_COLORS, colorize, lighten_hex
 from planecli.utils.resolve import (
+    resolve_estimate_point_async,
     resolve_label_async,
     resolve_module_async,
     resolve_project_async,
@@ -48,6 +49,7 @@ WI_FIELDS = [
     ("state_detail_name", "State"),
     ("assignee_names", "Assignees"),
     ("label_names", "Labels"),
+    ("estimate_display", "Estimate"),
     ("start_date", "Start Date"),
     ("target_date", "Target Date"),
     ("created_at", "Created"),
@@ -166,6 +168,15 @@ def _enrich_work_item(
         import re
 
         data["description_stripped"] = re.sub(r"<[^>]+>", "", desc_html).strip()
+
+    # Estimate display - handle expanded dict, raw UUID, or None
+    ep = data.get("estimate_point")
+    if isinstance(ep, dict) and ep.get("value"):
+        data["estimate_display"] = ep["value"]
+    elif isinstance(ep, str) and ep:
+        data["estimate_display"] = ep  # UUID fallback
+    else:
+        data["estimate_display"] = ""
 
     return data
 
@@ -395,6 +406,15 @@ async def show(
             data, _ = await resolve_work_item_across_projects_async(
                 issue, client, workspace
             )
+
+        # Re-fetch with expanded estimate_point for display
+        if data.get("id") and data.get("project"):
+            expanded = await run_sdk(
+                client.work_items._get,
+                f"{workspace}/projects/{data['project']}/work-items/{data['id']}",
+                {"expand": "estimate_point"},
+            )
+            data["estimate_point"] = expanded.get("estimate_point")
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -471,9 +491,6 @@ async def create(
             priority_map = {"0": "none", "1": "urgent", "2": "high", "3": "medium", "4": "low"}
             create_data.priority = priority_map.get(priority, priority.lower())
 
-        if estimate is not None:
-            create_data.estimate_point = estimate
-
         if assignee:
             user = parallel_results[idx]
             create_data.assignees = [user["id"]]
@@ -484,30 +501,39 @@ async def create(
             create_data.parent = parent_data["id"]
             idx += 1
 
-        # Resolve state and labels (depend on project_id) in parallel
+        # Resolve state, labels, and estimate (depend on project_id) in parallel
         dependent_tasks = []
+        dep_keys = []
         if state:
             dependent_tasks.append(
                 resolve_state_async(state, client, workspace, project_id)
             )
+            dep_keys.append("state")
+        if estimate is not None:
+            dependent_tasks.append(
+                resolve_estimate_point_async(str(estimate), workspace, project_id)
+            )
+            dep_keys.append("estimate")
         if labels:
             label_names = [ln.strip() for ln in labels.split(",") if ln.strip()]
-            dependent_tasks.extend(
-                resolve_label_async(ln, client, workspace, project_id)
-                for ln in label_names
-            )
+            for ln in label_names:
+                dependent_tasks.append(
+                    resolve_label_async(ln, client, workspace, project_id)
+                )
+                dep_keys.append("label")
 
         if dependent_tasks:
             dep_results = await asyncio.gather(*dependent_tasks)
-            dep_idx = 0
-            if state:
-                state_data = dep_results[dep_idx]
-                create_data.state = state_data["id"]
-                dep_idx += 1
-            if labels:
-                label_ids = [dep_results[i]["id"] for i in range(dep_idx, len(dep_results))]
-                if label_ids:
-                    create_data.labels = label_ids
+            label_ids = []
+            for key, result in zip(dep_keys, dep_results):
+                if key == "state":
+                    create_data.state = result["id"]
+                elif key == "estimate":
+                    create_data.estimate_point = result["id"]
+                elif key == "label":
+                    label_ids.append(result["id"])
+            if label_ids:
+                create_data.labels = label_ids
 
         item = await run_sdk(client.work_items.create, workspace, project_id, create_data)
         data = _enrich_work_item(item.model_dump())
@@ -542,6 +568,7 @@ async def update(
     labels: str | None = None,
     clear_labels: bool = False,
     name: str | None = None,
+    estimate: Annotated[int | None, Parameter(alias="-e")] = None,
     description: Annotated[str | None, Parameter(alias="-d")] = None,
     json: bool = False,
 ) -> None:
@@ -565,6 +592,8 @@ async def update(
         Remove all labels.
     name
         New title.
+    estimate
+        Story point estimate.
     description
         New description (plain text).
     """
@@ -596,7 +625,7 @@ async def update(
             priority_map = {"0": "none", "1": "urgent", "2": "high", "3": "medium", "4": "low"}
             update_data.priority = priority_map.get(priority, priority.lower())
 
-        # Resolve assignee, state, and labels in parallel
+        # Resolve assignee, state, labels, and estimate in parallel
         parallel_tasks = []
         task_keys = []
 
@@ -608,6 +637,11 @@ async def update(
                 resolve_state_async(state, client, workspace, project_id)
             )
             task_keys.append("state")
+        if estimate is not None:
+            parallel_tasks.append(
+                resolve_estimate_point_async(str(estimate), workspace, project_id)
+            )
+            task_keys.append("estimate")
         if labels and not clear_labels:
             label_names = [ln.strip() for ln in labels.split(",") if ln.strip()]
             for ln in label_names:
@@ -618,22 +652,17 @@ async def update(
 
         if parallel_tasks:
             results = await asyncio.gather(*parallel_tasks)
-            result_idx = 0
-            for key in task_keys:
+            label_ids = []
+            for key, result in zip(task_keys, results):
                 if key == "assignee":
-                    update_data.assignees = [results[result_idx]["id"]]
+                    update_data.assignees = [result["id"]]
                 elif key == "state":
-                    update_data.state = results[result_idx]["id"]
+                    update_data.state = result["id"]
+                elif key == "estimate":
+                    update_data.estimate_point = result["id"]
                 elif key == "label":
-                    pass  # handled below
-                result_idx += 1
-            # Collect label IDs
-            if labels and not clear_labels:
-                label_ids = [
-                    results[i]["id"]
-                    for i, k in enumerate(task_keys)
-                    if k == "label"
-                ]
+                    label_ids.append(result["id"])
+            if labels and not clear_labels and label_ids:
                 update_data.labels = label_ids
 
         if clear_labels:
