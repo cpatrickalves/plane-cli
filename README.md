@@ -1,190 +1,367 @@
 # PlaneCLI
 
-PlaneCLI is a command-line interface for [Plane.so](https://plane.so), an open-source project management tool. The CLI allows you to manage projects, work items, modules, documents, comments, and users directly from the terminal, without needing to access the web interface.
+A command-line interface for [Plane.so](https://plane.so) (SaaS or Self-hosted) that lets you manage projects, work items, cycles, modules, documents, and more — directly from the terminal.
 
-The main differentiator of PlaneCLI is its intelligent resource resolution via **fuzzy search**: you can reference any resource by name, identifier (e.g. `ABC-123`), or UUID, and the CLI automatically finds the closest match. All commands support formatted table output (default) or JSON for integration with other tools.
+The main differentiator is **intelligent fuzzy search**: reference any resource by name, identifier (e.g. `ABC-123`), or UUID, and PlaneCLI automatically finds the closest match.
 
 ## Features
 
-- **Work Items/Issues Management**: Create, list, update, and delete work items with support for sub-issues, labels, states, priorities, and assignees
-- **Projects**: List, create, and view project details with state filters
-- **Modules**: Manage project modules (sprints, versions, etc.)
-- **Documents**: Create, list, read, update, and delete project documents
-- **Comments**: Add and list comments on work items
+- **Work Items**: Full CRUD with sub-issues, labels, states, priorities, assignees, search, and quick-assign
+- **Projects**: List, create, view, update, and delete projects
+- **Cycles**: Manage sprints — create cycles, add/remove work items, track progress
+- **Modules**: Organize work into modules with date ranges
+- **Labels**: Create and manage project labels with custom colors
+- **States**: Configure workflow states per project
+- **Documents**: Create, read, update, and delete project documents
+- **Comments**: Add, update, and delete comments on work items
 - **Users**: List workspace members and identify the authenticated user
-- **Fuzzy Search**: Intelligent resource resolution by name, identifier, or UUID
-- **Dual Output**: Formatted Rich tables (stderr) or JSON (stdout) with `--json` flag
-- **Flexible Configuration**: Support for environment variables, `~/.plane_api` file, or interactive setup
+- **Fuzzy Search**: Intelligent resource resolution — `--project "Front"` finds "Frontend"
+- **Dual Output**: Rich tables (default) or JSON with `--json` for scripting
+- **Caching**: Disk-based API response cache for faster repeated queries
+- **Flexible Configuration**: Environment variables, config file, or interactive setup
 
-## Project Structure
+## Quick Start
+
+### 1. Install
 
 ```bash
-├── LICENSE                       # MIT License
-├── pyproject.toml              # Project configuration and dependencies
-├── README.md                    # Project documentation
-├── src/
-│   └── planecli/
-│       ├── __init__.py          # Package version
-│       ├── __main__.py         # Support for python -m planecli
-│       ├── app.py                # Root cyclopts App, sub-app registration, and entry point
-│       ├── config.py            # Config loading (args > env > file)
-│       ├── exceptions.py        # Custom exception hierarchy
-│       ├── api/
-│       │   └── client.py       # PlaneClient singleton wrapper
-│       ├── commands/
-│       │   ├── comments.py       # Comment commands
-│       │   ├── documents.py      # Document commands
-│       │   ├── modules.py         # Module commands
-│       │   ├── projects.py        # Project commands
-│       │   ├── users.py            # User commands
-│       │   └── work_items.py     # Work item/issue commands
-│       ├── formatters/
-│       │   └── __init__.py         # Output formatting (Rich table / JSON)
-│       └── utils/
-│           ├── fuzzy.py            # Fuzzy search with rapidfuzz
-│           └── resolve.py          # Intelligent resource resolution
-├── tests/
-│   ├── conftest.py                # Shared fixtures
-│   ├── test_config.py            # Config tests
-│   ├── test_fuzzy.py             # Fuzzy search tests
-│   ├── test_resolve.py           # Resource resolution tests
-│   └── test_commands/          # Command tests
-└── docs/
-    └── plans/                      # Planning documents
+git clone https://github.com/cpatrickalves/plane-cli.git
+cd plane-cli
+uv tool install -e .
 ```
 
-## Prerequisites
-
-- `Python >= 3.11`
-- `uv` (package and virtual environment manager)
-- A [Plane.so](https://plane.so) or self-hosted account with a generated API key
-- Access to a Plane workspace
-
-## Technologies Used
-
-| Technology | Purpose |
-|---|---|
-| [cyclopts](https://cyclopts.readthedocs.io/) | CLI framework (argument parsing, sub-commands) |
-| [Rich](https://rich.readthedocs.io/) | Formatted tables and colored terminal output |
-| [rapidfuzz](https://github.com/rapidfuzz/RapidFuzz) | Fuzzy search for intelligent resource resolution |
-| [plane-sdk](https://github.com/makeplane/plane-python-sdk) | Official Plane.so Python SDK |
-| [hatchling](https://hatch.pypa.io/) | Build backend for packaging |
-| [pytest](https://docs.pytest.org/) | Testing framework |
-| [ruff](https://docs.astral.sh/ruff/) | Python linter and formatter |
-
-## Installation
-
-1. Clone the repository:
-
-   ```bash
-   git clone <repository-url>
-   cd planecli-compound
-   ```
-
-2. Install the CLI (choose one option):
-
-   **Option 1 — System-wide install (recommended):**
-
-   ```bash
-   uv tool install -e .
-   ```
-
-   This installs `planecli` as a standalone command available from anywhere. The `-e` (editable) flag means code changes are reflected immediately without reinstalling.
-
-   **Option 2 — Development only:**
-
-   ```bash
-   uv sync
-   ```
-
-   This installs dependencies in a local virtual environment. Commands must be run with `uv run planecli`.
-
-3. Configure credentials (choose one option):
-
-   **Option A - Interactive setup:**
-
-   ```bash
-   planecli configure
-   ```
-
-   **Option B - Environment variables:**
-
-   ```bash
-   export PLANE_BASE_URL="https://api.plane.so"
-   export PLANE_API_KEY="your-api-key"
-   export PLANE_WORKSPACE="your-workspace-slug"
-   ```
-
-   **Option C - Configuration file:**
-   Create the file `~/.plane_api`:
-
-   ```ini
-   base_url=https://api.plane.so
-   api_key=your-api-key
-   workspace=your-workspace-slug
-   ```
-
-> **Configuration precedence:** CLI arguments > environment variables > `~/.plane_api` file
-
-## Usage
-
-> If you installed with `uv tool install`, use `planecli` directly. If using `uv sync`, prefix all commands with `uv run`.
+### 2. Configure
 
 ```bash
-# Check authenticated user
+planecli configure
+```
+
+This prompts for your Plane base URL, API key, and workspace slug. See [Configuration](#configuration) for alternative methods.
+
+### 3. Try it out
+
+```bash
+# Check your identity
 planecli whoami
 
-# List projects
-planecli project list
+# List your projects
+planecli project ls
 
 # List work items for a project
-planecli wi list --project "Frontend"
+planecli wi ls -p "Frontend"
 
 # Create a work item
-planecli wi create "Fix login timeout" --project "Frontend" --assign me --priority urgent
-
-# Create a sub-issue
-planecli wi create "Review PR #345" --parent ABC-234 --assign "Luiz" --state "In Review"
-
-# Update a work item state
-planecli wi update ABC-123 --state "In Review"
-
-# Add a comment to a work item
-planecli comment create ABC-123 --body "Fixed in PR #456"
-
-# List comments
-planecli comment list ABC-123
-
-# List documents for a project
-planecli document list --project "Backend"
-
-# List workspace users
-planecli users list
-
-# JSON output (useful for integration with other tools)
-planecli wi list --project "Frontend" --json
-
-# Sort results
-planecli wi list --sort updated --limit 10
+planecli wi create "Fix login bug" -p "Frontend" --assign me --priority urgent
 ```
 
-### Command Aliases
+## Command Reference
+
+> If you installed with `uv sync` instead of `uv tool install`, prefix all commands with `uv run`.
+
+### Work Items
+
+```bash
+# List all work items across all projects
+planecli wi ls
+
+# List work items for a specific project
+planecli wi ls -p "Frontend"
+
+# Filter by state and/or labels (comma-separated for OR logic)
+planecli wi ls -p "Frontend" --state "In Progress,In Review"
+planecli wi ls -p "Frontend" --labels "bug,critical"
+
+# Sort and limit results
+planecli wi ls -p "Frontend" --sort updated --limit 10
+
+# Show a specific work item (by identifier or name)
+planecli wi show ABC-123
+
+# Create a work item
+planecli wi create "Fix login timeout" -p "Frontend" --assign me --priority urgent
+planecli wi create "Review PR #345" --parent ABC-234 --assign "Luiz" --state "In Review"
+
+# Update a work item
+planecli wi update ABC-123 --state "Done" --priority none
+
+# Quick-assign a work item (defaults to yourself)
+planecli wi assign ABC-123
+planecli wi assign ABC-123 --assign "Patrick"
+
+# Search work items
+planecli wi search "login bug" -p "Frontend"
+
+# Delete a work item
+planecli wi delete ABC-123
+```
+
+### Projects
+
+```bash
+# List all projects
+planecli project ls
+
+# Show project details
+planecli project show "Frontend"
+
+# Create a project
+planecli project create "Backend API" -i "API" -d "REST API service"
+
+# Update a project
+planecli project update "Backend API" --name "Backend Service"
+
+# Delete a project
+planecli project delete "Old Project"
+```
+
+### Cycles
+
+```bash
+# List cycles for a project
+planecli cycle ls -p "Frontend"
+
+# Show cycle details
+planecli cycle show "Sprint 1" -p "Frontend"
+
+# Create a cycle
+planecli cycle create "Sprint 2" -p "Frontend" --start-date 2026-02-17 --end-date 2026-03-02
+
+# Add/remove work items from a cycle
+planecli cycle add-item "Sprint 2" ABC-123 -p "Frontend"
+planecli cycle remove-item "Sprint 2" ABC-123 -p "Frontend"
+
+# List items in a cycle
+planecli cycle items "Sprint 2" -p "Frontend"
+```
+
+### Modules
+
+```bash
+# List modules
+planecli module ls -p "Frontend"
+
+# Show module details
+planecli module show "Authentication" -p "Frontend"
+
+# Create a module
+planecli module create "Authentication" -p "Frontend" -d "Login and signup flows"
+
+# Update a module
+planecli module update "Authentication" -p "Frontend" --start-date 2026-03-01
+
+# Delete a module
+planecli module delete "Authentication" -p "Frontend"
+```
+
+### Labels
+
+```bash
+# List project labels
+planecli label ls -p "Frontend"
+
+# Create a label with a color
+planecli label create "urgent" -p "Frontend" --color "#FF0000"
+
+# Update a label
+planecli label update "urgent" -p "Frontend" --name "critical" --color "#CC0000"
+
+# Delete a label
+planecli label delete "urgent" -p "Frontend"
+```
+
+### States
+
+```bash
+# List workflow states
+planecli state ls -p "Frontend"
+
+# Filter by group (backlog, unstarted, started, completed, cancelled)
+planecli state ls -p "Frontend" --group started
+
+# Create a state
+planecli state create "In Review" -p "Frontend" --group started --color "#FFA500"
+
+# Update a state
+planecli state update "In Review" -p "Frontend" --color "#FF8C00"
+
+# Delete a state
+planecli state delete "In Review" -p "Frontend"
+```
+
+### Documents
+
+```bash
+# List documents
+planecli doc ls -p "Frontend"
+
+# Read a document
+planecli doc show "Architecture Guide" -p "Frontend"
+
+# Create a document
+planecli doc create --title "API Spec" --content "## Endpoints..." -p "Frontend"
+
+# Update a document
+planecli doc update "API Spec" --content "Updated content" -p "Frontend"
+
+# Delete a document
+planecli doc delete "API Spec" -p "Frontend"
+```
+
+### Comments
+
+```bash
+# List comments on a work item
+planecli comment ls ABC-123
+
+# Add a comment
+planecli comment create ABC-123 --body "Fixed in PR #456"
+
+# Update a comment
+planecli comment update <comment-id> --issue ABC-123 --body "Updated comment"
+
+# Delete a comment
+planecli comment delete <comment-id> --issue ABC-123
+```
+
+### Users
+
+```bash
+# List workspace members
+planecli users ls
+
+# Check authenticated user
+planecli whoami
+```
+
+### Cache
+
+```bash
+# Clear the API response cache
+planecli cache clear
+
+# Bypass cache for a single command
+planecli --no-cache wi ls -p "Frontend"
+```
+
+## Command Aliases
 
 | Full command | Aliases |
 |---|---|
 | `planecli work-item` | `wi`, `issues`, `issue` |
-| `planecli project` | - |
-| `planecli comment` | - |
-| `planecli document` | `doc` |
+| `planecli project` | `projects` |
+| `planecli comment` | `comments` |
+| `planecli document` | `documents`, `doc`, `docs` |
 | `planecli users` | `user` |
-| `planecli module` | - |
+| `planecli module` | `modules` |
+| `planecli label` | `labels` |
+| `planecli state` | `states` |
+| `planecli cycle` | `cycles` |
+| `planecli cache` | - |
 | Subcommand `list` | `ls` |
-| Subcommand `read` | `show` |
+| Subcommand `show` | `read` |
 | Subcommand `create` | `new` |
+
+## Configuration
+
+PlaneCLI supports three configuration methods. Precedence: **CLI arguments > environment variables > config file**.
+
+### Interactive Setup
+
+```bash
+planecli configure
+```
+
+Prompts for base URL, API key, and workspace slug. Saves to `~/.plane_api` with restricted permissions (`0600`).
+
+### Environment Variables
+
+```bash
+export PLANE_BASE_URL="https://api.plane.so"
+export PLANE_API_KEY="your-api-key"
+export PLANE_WORKSPACE="your-workspace-slug"
+```
+
+Works with both Plane.so SaaS (`https://api.plane.so`) and self-hosted instances.
+
+### Configuration File
+
+Create `~/.plane_api`:
+
+```ini
+base_url=https://api.plane.so
+api_key=your-api-key
+workspace=your-workspace-slug
+```
+
+## Output Formats
+
+By default, PlaneCLI renders results as colored Rich tables on stderr. Add `--json` to any command to get structured JSON on stdout:
+
+```bash
+# Table output (default)
+planecli wi ls -p "Frontend"
+
+# JSON output
+planecli wi ls -p "Frontend" --json
+
+# JSON only (suppress the table)
+planecli wi ls -p "Frontend" --json 2>/dev/null
+
+# Pipe to jq
+planecli wi ls -p "Frontend" --json 2>/dev/null | jq '.[].name'
+```
+
+## Fuzzy Search
+
+PlaneCLI resolves resources using a three-step strategy:
+
+1. **UUID** — direct lookup if the input is a valid UUID
+2. **Identifier** — matches patterns like `ABC-123` against project identifiers
+3. **Fuzzy name match** — uses [rapidfuzz](https://github.com/rapidfuzz/RapidFuzz) with a 60% similarity threshold
+
+This means you don't need exact names:
+
+```bash
+planecli wi ls -p "Front"        # Matches "Frontend"
+planecli wi assign ABC-123 --assign "Pat"  # Matches "Patrick"
+planecli wi update ABC-123 --state "review"  # Matches "In Review"
+```
+
+## Caching
+
+PlaneCLI caches API responses on disk (SQLite-backed) for faster repeated queries. Caching is automatic and transparent.
+
+```bash
+# Bypass cache for a single command
+planecli --no-cache wi ls -p "Frontend"
+
+# Or set the environment variable
+export PLANECLI_NO_CACHE=1
+
+# Clear all cached data
+planecli cache clear
+```
+
+For details on TTLs, cache keys, and invalidation, see [docs/03-caching.md](docs/03-caching.md).
 
 ## Development
 
-A `Makefile` is provided with common development tasks. Run `make help` to see all available commands:
+### Prerequisites
+
+- Python >= 3.11
+- [uv](https://docs.astral.sh/uv/) (package and virtual environment manager)
+- A [Plane.so](https://plane.so) or self-hosted account with an API key
+
+### Setup
+
+```bash
+git clone https://github.com/cpatrickalves/plane-cli.git
+cd plane-cli
+uv sync
+uv run planecli --help
+```
+
+### Makefile
 
 ```bash
 make help            # Show all available commands
@@ -201,20 +378,76 @@ make clean           # Remove build artifacts and caches
 make run ARGS="..."  # Run the CLI with arguments
 ```
 
-## Notes and Restrictions
+### Project Structure
 
-- The project is in **Alpha** phase (v0.1.0) and the command interface may change
-- The **Documents (Pages)** API in the Plane SDK has limited support: list, update, and delete operations use direct HTTP requests as a workaround
-- Fuzzy search uses a default threshold of 60 (scale 0-100) to consider a valid match
-- The `~/.plane_api` file is saved with restricted permissions (`0600`) to protect the API key
-- Compatible with Plane.so SaaS and self-hosted versions
+```
+src/planecli/
+    __init__.py          # Package version
+    __main__.py          # python -m planecli support
+    app.py               # Root cyclopts App, sub-app registration, entry point
+    cache.py             # Disk-based caching with cashews
+    config.py            # Config loading (args > env > file)
+    exceptions.py        # Custom exception hierarchy
+    api/
+        client.py        # PlaneClient singleton wrapper
+        async_sdk.py     # Async wrapper with rate limiter
+    commands/
+        cache_cmd.py     # Cache management
+        comments.py      # Comment CRUD
+        cycles.py        # Cycle CRUD + item management
+        documents.py     # Document CRUD
+        labels.py        # Label CRUD
+        modules.py       # Module CRUD
+        projects.py      # Project CRUD
+        states.py        # State CRUD
+        users.py         # User listing
+        work_items.py    # Work item CRUD + search + assign
+    formatters/
+        __init__.py      # Rich table and JSON output
+    utils/
+        colors.py        # Color helpers for priorities, states, labels
+        fuzzy.py         # Fuzzy search with rapidfuzz
+        resolve.py       # Resource resolution (UUID/identifier/fuzzy)
+tests/
+    conftest.py          # Shared fixtures
+    test_cache.py        # Cache tests
+    test_config.py       # Config tests
+    test_fuzzy.py        # Fuzzy search tests
+    test_resolve.py      # Resource resolution tests
+    test_commands/       # Command tests
+```
 
-## Common Issues
+### Technologies
+
+| Technology | Purpose |
+|---|---|
+| [cyclopts](https://cyclopts.readthedocs.io/) | CLI framework (argument parsing, sub-commands) |
+| [Rich](https://rich.readthedocs.io/) | Formatted tables and colored terminal output |
+| [rapidfuzz](https://github.com/rapidfuzz/RapidFuzz) | Fuzzy search for resource resolution |
+| [plane-sdk](https://github.com/makeplane/plane-python-sdk) | Official Plane.so Python SDK |
+| [cashews](https://github.com/krupen/cashews) | Disk-based API response caching |
+| [hatchling](https://hatch.pypa.io/) | Build backend for packaging |
+| [pytest](https://docs.pytest.org/) | Testing framework |
+| [ruff](https://docs.astral.sh/ruff/) | Python linter and formatter |
+
+## Troubleshooting
 
 | Issue | Solution |
 |---|---|
-| `AuthenticationError: Missing API key` | Configure credentials with `planecli configure` or set the `PLANE_API_KEY` and `PLANE_BASE_URL` environment variables |
-| `AuthenticationError: Missing workspace slug` | Set the `PLANE_WORKSPACE` variable or add `workspace=slug` to the `~/.plane_api` file |
-| `ResourceNotFoundError` when using resource name | Verify the name is correct with `planecli <resource> list`; fuzzy search requires at least 60% similarity |
-| API connection error | Check that `PLANE_BASE_URL` is correct and accessible |
-| JSON output doesn't appear with table | The table is sent to stderr and JSON to stdout; use `2>/dev/null` to see only the JSON |
+| `AuthenticationError: Missing API key` | Run `planecli configure` or set `PLANE_API_KEY` and `PLANE_BASE_URL` environment variables |
+| `AuthenticationError: Missing workspace slug` | Set `PLANE_WORKSPACE` or add `workspace=slug` to `~/.plane_api` |
+| `ResourceNotFoundError` with a resource name | Check the name with `planecli <resource> list`; fuzzy search needs at least 60% similarity |
+| API connection error | Verify `PLANE_BASE_URL` is correct and reachable |
+| JSON output doesn't appear with table | Table goes to stderr, JSON to stdout — use `2>/dev/null` to suppress the table |
+| Stale or incorrect data | Run `planecli cache clear` to reset the cache |
+
+## Notes
+
+- The project is in **Alpha** (v0.1.0) — the command interface may change
+- The Documents (Pages) API in the Plane SDK has limited support; list, update, and delete use direct HTTP requests as a workaround
+- Compatible with Plane.so SaaS and self-hosted instances
+- The `~/.plane_api` file is saved with restricted permissions (`0600`)
+
+## License
+
+MIT
