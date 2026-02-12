@@ -36,7 +36,7 @@ uv tool install -e .
 planecli configure
 ```
 
-This prompts for your Plane base URL, API key, and workspace slug. See [Configuration](#configuration) for alternative methods.
+This prompts for your Plane base URL, Personal Access Token, and workspace slug. See [Configuration](#configuration) for alternative methods.
 
 ### 3. Try it out
 
@@ -271,13 +271,13 @@ PlaneCLI supports three configuration methods. Precedence: **CLI arguments > env
 planecli configure
 ```
 
-Prompts for base URL, API key, and workspace slug. Saves to `~/.plane_api` with restricted permissions (`0600`).
+Prompts for base URL, Personal Access Token, and workspace slug. Saves to `~/.plane_api` with restricted permissions (`0600`).
 
 ### Environment Variables
 
 ```bash
 export PLANE_BASE_URL="https://api.plane.so"
-export PLANE_API_KEY="your-api-key"
+export PLANE_API_KEY="your-personal-access-token"
 export PLANE_WORKSPACE="your-workspace-slug"
 ```
 
@@ -289,7 +289,7 @@ Create `~/.plane_api`:
 
 ```ini
 base_url=https://api.plane.so
-api_key=your-api-key
+api_key=your-personal-access-token
 workspace=your-workspace-slug
 ```
 
@@ -350,7 +350,7 @@ For details on TTLs, cache keys, and invalidation, see [docs/03-caching.md](docs
 
 - Python >= 3.11
 - [uv](https://docs.astral.sh/uv/) (package and virtual environment manager)
-- A [Plane.so](https://plane.so) or self-hosted account with an API key
+- A [Plane.so](https://plane.so) or self-hosted account with a [Personal Access Token](https://developers.plane.so/api-reference/introduction)
 
 ### Setup
 
@@ -434,7 +434,7 @@ tests/
 
 | Issue | Solution |
 |---|---|
-| `AuthenticationError: Missing API key` | Run `planecli configure` or set `PLANE_API_KEY` and `PLANE_BASE_URL` environment variables |
+| `AuthenticationError: Missing API key` | Run `planecli configure` or set `PLANE_API_KEY` (your Personal Access Token) and `PLANE_BASE_URL` environment variables |
 | `AuthenticationError: Missing workspace slug` | Set `PLANE_WORKSPACE` or add `workspace=slug` to `~/.plane_api` |
 | `ResourceNotFoundError` with a resource name | Check the name with `planecli <resource> list`; fuzzy search needs at least 60% similarity |
 | API connection error | Verify `PLANE_BASE_URL` is correct and reachable |
