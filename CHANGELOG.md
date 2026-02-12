@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-02-12
+
+### Adicionado
+- Logging estruturado com loguru e redução de chamadas à API via smart caching
+- Retry automático com tenacity para rate limits e erros transientes na API
+- Resolução de UUID de estimate_point no parâmetro `--estimate` do comando `wi`
+
+### Corrigido
+- Correção do bypass de validação do SDK para assignees/labels na resolução de work items
+- Removida supressão silenciosa de exceções no filtro de assignees do `wi`
+
+### Alterado
+- Removida coluna redundante de Project na listagem `wi list`
+- Atualizada terminologia no README de "API Key" para "Personal Access Token"
+
 ## [0.2.0] - 2026-02-11
 
 ### Added
