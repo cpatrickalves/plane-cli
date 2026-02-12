@@ -26,6 +26,7 @@ dependencies = [
     "plane-sdk",
     "cashews[diskcache]>=7.0",
     "tenacity>=8.0",
+    "loguru>=0.7",
 ]
 
 [project.scripts]

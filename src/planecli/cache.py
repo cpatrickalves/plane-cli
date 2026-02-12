@@ -5,11 +5,11 @@ from __future__ import annotations
 import hashlib
 import os
 import platform
-import sys
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from cashews import Cache
+from loguru import logger
 
 cache = Cache()
 
@@ -17,6 +17,7 @@ cache = Cache()
 TTL_STATIC = "1h"  # members
 TTL_CONFIG = "10m"  # states, labels
 TTL_MODERATE = "5m"  # projects, modules, cycles
+TTL_WORK_ITEMS = "2m"  # work items: short TTL to avoid stale data
 
 # Module-level flag for --no-cache behavior
 _no_cache = False
@@ -93,7 +94,7 @@ async def _cached_list(
             if cached is not None:
                 return cached
         except Exception as exc:
-            print(f"Warning: Cache read error, fetching from API: {exc}", file=sys.stderr)
+            logger.warning("Cache read error, fetching from API: {}", exc)
 
     # Cache miss or --no-cache: fetch from API
     results = await fetch_fn()
@@ -105,7 +106,7 @@ async def _cached_list(
     try:
         await cache.set(key, data, expire=ttl)
     except Exception as exc:
-        print(f"Warning: Cache write error: {exc}", file=sys.stderr)
+        logger.warning("Cache write error: {}", exc)
 
     return data
 
@@ -166,6 +167,38 @@ async def cached_list_labels(workspace: str, project_id: str) -> list[dict[str, 
     return await _cached_list(key, TTL_CONFIG, _fetch)
 
 
+async def cached_list_work_items(workspace: str, project_id: str) -> list[dict[str, Any]]:
+    """Fetch work items with short-lived caching (TTL: 2m).
+
+    Work items change more frequently than states/labels, but caching for 2min
+    avoids repeated API calls when running wi ls multiple times in sequence.
+    """
+    from planecli.api.async_sdk import create_client, paginate_all_async
+
+    key = _cache_key("work_items", workspace, project_id)
+
+    async def _fetch() -> list[Any]:
+        client = create_client()
+        return await paginate_all_async(client.work_items.list, workspace, project_id)
+
+    return await _cached_list(key, TTL_WORK_ITEMS, _fetch)
+
+
+async def cached_get_me(workspace: str) -> dict[str, Any]:
+    """Cache the current user (TTL: 1h)."""
+    from planecli.api.async_sdk import create_client, run_sdk
+
+    key = _cache_key("me", workspace)
+
+    async def _fetch() -> list[Any]:
+        client = create_client()
+        me = await run_sdk(client.users.get_me)
+        return [me]  # Wrap in list for _cached_list compatibility
+
+    result = await _cached_list(key, TTL_STATIC, _fetch)
+    return result[0] if result else {}
+
+
 async def cached_list_modules(workspace: str, project_id: str) -> list[dict[str, Any]]:
     """Fetch modules with caching (TTL: 5m)."""
     from planecli.api.async_sdk import create_client, paginate_all_async
@@ -203,7 +236,7 @@ async def invalidate_resource(
     try:
         await cache.delete(key)
     except Exception as exc:
-        print(f"Warning: Cache invalidation error: {exc}", file=sys.stderr)
+        logger.warning("Cache invalidation error: {}", exc)
 
 
 async def invalidate_all() -> None:

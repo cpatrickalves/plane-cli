@@ -8,12 +8,14 @@ from planecli.cache import (
     _cache_key,
     _cached_list,
     cache,
+    cached_get_me,
     cached_list_cycles,
     cached_list_labels,
     cached_list_members,
     cached_list_modules,
     cached_list_projects,
     cached_list_states,
+    cached_list_work_items,
     get_cache_dir,
     invalidate_all,
     invalidate_resource,
@@ -218,6 +220,44 @@ async def test_cached_list_cycles(mock_paginate, mock_create_client, mock_hash):
     assert mock_paginate.call_count == 1
 
 
+@patch("planecli.cache._url_hash", return_value="abc123")
+@patch("planecli.api.async_sdk.create_client")
+@patch("planecli.api.async_sdk.paginate_all_async")
+async def test_cached_list_work_items(mock_paginate, mock_create_client, mock_hash):
+    item = _make_model({"id": "wi1", "name": "Fix bug", "sequence_id": 1})
+    mock_paginate.return_value = [item]
+
+    result = await cached_list_work_items("my-ws", "proj-1")
+    assert len(result) == 1
+    assert result[0]["name"] == "Fix bug"
+
+    # Second call should hit cache
+    result2 = await cached_list_work_items("my-ws", "proj-1")
+    assert result2 == result
+    assert mock_paginate.call_count == 1  # only called once
+
+
+@patch("planecli.cache._url_hash", return_value="abc123")
+@patch("planecli.api.async_sdk.create_client")
+@patch("planecli.api.async_sdk.run_sdk", new_callable=AsyncMock)
+async def test_cached_get_me(mock_run_sdk, mock_create_client, mock_hash):
+    me = _make_model({
+        "id": "user-1",
+        "display_name": "Patrick",
+        "email": "patrick@example.com",
+    })
+    mock_run_sdk.return_value = me
+
+    result = await cached_get_me("my-ws")
+    assert result["id"] == "user-1"
+    assert result["display_name"] == "Patrick"
+
+    # Second call should hit cache
+    result2 = await cached_get_me("my-ws")
+    assert result2 == result
+    assert mock_run_sdk.call_count == 1  # only called once
+
+
 # --- Tests for invalidation ---
 
 
@@ -252,7 +292,8 @@ async def test_invalidate_all():
 
 
 @patch("planecli.cache._url_hash", return_value="abc123")
-async def test_cache_read_error_falls_back_to_api(mock_hash, capsys):
+@patch("planecli.cache.logger")
+async def test_cache_read_error_falls_back_to_api(mock_logger, mock_hash):
     """If cache.get raises, fall back to API fetch."""
     model = _make_model({"id": "1", "name": "Fallback"})
     fetch_fn = AsyncMock(return_value=[model])
@@ -262,12 +303,13 @@ async def test_cache_read_error_falls_back_to_api(mock_hash, capsys):
 
     assert result == [{"id": "1", "name": "Fallback"}]
     assert fetch_fn.call_count == 1
-    captured = capsys.readouterr()
-    assert "Cache read error" in captured.err
+    mock_logger.warning.assert_called()
+    assert "Cache read error" in str(mock_logger.warning.call_args)
 
 
 @patch("planecli.cache._url_hash", return_value="abc123")
-async def test_cache_write_error_still_returns_data(mock_hash, capsys):
+@patch("planecli.cache.logger")
+async def test_cache_write_error_still_returns_data(mock_logger, mock_hash):
     """If cache.set raises, data is still returned from API."""
     model = _make_model({"id": "1", "name": "WriteError"})
     fetch_fn = AsyncMock(return_value=[model])
@@ -276,8 +318,8 @@ async def test_cache_write_error_still_returns_data(mock_hash, capsys):
         result = await _cached_list("writeerr:key", "5m", fetch_fn)
 
     assert result == [{"id": "1", "name": "WriteError"}]
-    captured = capsys.readouterr()
-    assert "Cache write error" in captured.err
+    mock_logger.warning.assert_called()
+    assert "Cache write error" in str(mock_logger.warning.call_args)
 
 
 # --- Tests for different workspaces/projects isolation ---

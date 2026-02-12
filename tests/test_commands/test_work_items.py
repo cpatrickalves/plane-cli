@@ -18,7 +18,7 @@ def _make_member_dict(member_id: str, first_name: str, last_name: str, display_n
     }
 
 
-def _make_work_item(
+def _make_work_item_dict(
     item_id: str,
     name: str,
     sequence_id: int,
@@ -27,9 +27,9 @@ def _make_work_item(
     labels: list | None = None,
     created_at: str = "2026-02-10T12:00:00Z",
     updated_at: str = "2026-02-10T12:00:00Z",
-):
-    item = MagicMock()
-    item.model_dump.return_value = {
+) -> dict:
+    """Return a work item as a dict (how cached_list_work_items returns them)."""
+    return {
         "id": item_id,
         "name": name,
         "sequence_id": sequence_id,
@@ -40,7 +40,6 @@ def _make_work_item(
         "created_at": created_at,
         "updated_at": updated_at,
     }
-    return item
 
 
 def _make_state_dict(state_id: str, name: str):
@@ -66,7 +65,7 @@ class TestWiList:
     @patch("planecli.commands.work_items.get_client")
     @patch("planecli.commands.work_items.create_client")
     @patch("planecli.commands.work_items.resolve_project_async")
-    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_labels", new_callable=AsyncMock)
@@ -75,7 +74,7 @@ class TestWiList:
         mock_cached_labels,
         mock_cached_states,
         mock_cached_members,
-        mock_paginate,
+        mock_cached_work_items,
         mock_resolve_project,
         mock_create_client,
         mock_get_client,
@@ -97,9 +96,11 @@ class TestWiList:
         # Project resolution
         mock_resolve_project.return_value = _make_project_dict("proj-1", "FE", "Frontend")
 
-        # Work items via paginate_all_async (not cached)
-        items = [_make_work_item("wi-1", "Fix bug", 1), _make_work_item("wi-2", "Add feature", 2)]
-        mock_paginate.return_value = items
+        # Work items (cached)
+        mock_cached_work_items.return_value = [
+            _make_work_item_dict("wi-1", "Fix bug", 1),
+            _make_work_item_dict("wi-2", "Add feature", 2),
+        ]
 
         # States and labels (cached)
         mock_cached_states.return_value = [_make_state_dict("state-uuid-1", "Todo")]
@@ -118,7 +119,7 @@ class TestWiList:
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
     @patch("planecli.commands.work_items.create_client")
-    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
@@ -129,7 +130,7 @@ class TestWiList:
         mock_cached_states,
         mock_cached_projects,
         mock_cached_members,
-        mock_paginate,
+        mock_cached_work_items,
         mock_create_client,
         mock_get_client,
         mock_get_ws,
@@ -153,10 +154,11 @@ class TestWiList:
             _make_project_dict("proj-2", "BE", "Backend"),
         ]
 
-        # Work items per project via paginate_all_async
-        fe_items = [_make_work_item("wi-1", "Fix bug", 1)]
-        be_items = [_make_work_item("wi-2", "Add API", 5)]
-        mock_paginate.side_effect = [fe_items, be_items]
+        # Work items per project (cached)
+        mock_cached_work_items.side_effect = [
+            [_make_work_item_dict("wi-1", "Fix bug", 1)],
+            [_make_work_item_dict("wi-2", "Add API", 5)],
+        ]
 
         # States and labels (cached, called per project)
         mock_cached_states.side_effect = [
@@ -180,7 +182,7 @@ class TestWiList:
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
     @patch("planecli.commands.work_items.create_client")
-    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
@@ -191,7 +193,7 @@ class TestWiList:
         mock_cached_states,
         mock_cached_projects,
         mock_cached_members,
-        mock_paginate,
+        mock_cached_work_items,
         mock_create_client,
         mock_get_client,
         mock_get_ws,
@@ -210,8 +212,9 @@ class TestWiList:
             _make_project_dict("proj-1", "FE", "Frontend"),
         ]
 
-        items = [_make_work_item("wi-1", "Fix bug", 1)]
-        mock_paginate.return_value = items
+        mock_cached_work_items.return_value = [
+            _make_work_item_dict("wi-1", "Fix bug", 1),
+        ]
 
         mock_cached_states.return_value = []
         mock_cached_labels.return_value = []
@@ -227,7 +230,7 @@ class TestWiList:
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
     @patch("planecli.commands.work_items.create_client")
-    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
@@ -238,7 +241,7 @@ class TestWiList:
         mock_cached_states,
         mock_cached_projects,
         mock_cached_members,
-        mock_paginate,
+        mock_cached_work_items,
         mock_create_client,
         mock_get_client,
         mock_get_ws,
@@ -258,8 +261,8 @@ class TestWiList:
             _make_project_dict("proj-2", "EMPTY", "Empty Project"),
         ]
 
-        mock_paginate.side_effect = [
-            [_make_work_item("wi-1", "Fix bug", 1)],  # FE items
+        mock_cached_work_items.side_effect = [
+            [_make_work_item_dict("wi-1", "Fix bug", 1)],  # FE items
             [],  # EMPTY items
         ]
 
@@ -284,7 +287,7 @@ class TestWiList:
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
     @patch("planecli.commands.work_items.create_client")
-    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
@@ -295,7 +298,7 @@ class TestWiList:
         mock_cached_states,
         mock_cached_projects,
         mock_cached_members,
-        mock_paginate,
+        mock_cached_work_items,
         mock_create_client,
         mock_get_client,
         mock_get_ws,
@@ -317,11 +320,10 @@ class TestWiList:
             _make_project_dict("proj-1", "FE", "Frontend"),
         ]
 
-        items = [
-            _make_work_item("wi-1", "Assigned to me", 1, assignees=["user-1"]),
-            _make_work_item("wi-2", "Unassigned", 2, assignees=[]),
+        mock_cached_work_items.return_value = [
+            _make_work_item_dict("wi-1", "Assigned to me", 1, assignees=["user-1"]),
+            _make_work_item_dict("wi-2", "Unassigned", 2, assignees=[]),
         ]
-        mock_paginate.return_value = items
 
         mock_cached_states.return_value = []
         mock_cached_labels.return_value = []
@@ -340,7 +342,7 @@ class TestWiList:
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
     @patch("planecli.commands.work_items.create_client")
-    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
@@ -351,7 +353,7 @@ class TestWiList:
         mock_cached_states,
         mock_cached_projects,
         mock_cached_members,
-        mock_paginate,
+        mock_cached_work_items,
         mock_create_client,
         mock_get_client,
         mock_get_ws,
@@ -371,11 +373,19 @@ class TestWiList:
             _make_project_dict("proj-1", "FE", "Frontend"),
         ]
 
-        mock_paginate.return_value = [
-            _make_work_item("wi-1", "My progress task", 1, state="s-progress", assignees=["user-1"]),
-            _make_work_item("wi-2", "Other progress task", 2, state="s-progress", assignees=["user-2"]),
-            _make_work_item("wi-3", "My review task", 3, state="s-review", assignees=["user-1"]),
-            _make_work_item("wi-4", "My done task", 4, state="s-done", assignees=["user-1"]),
+        mock_cached_work_items.return_value = [
+            _make_work_item_dict(
+                "wi-1", "My progress task", 1, state="s-progress", assignees=["user-1"],
+            ),
+            _make_work_item_dict(
+                "wi-2", "Other progress task", 2, state="s-progress", assignees=["user-2"],
+            ),
+            _make_work_item_dict(
+                "wi-3", "My review task", 3, state="s-review", assignees=["user-1"],
+            ),
+            _make_work_item_dict(
+                "wi-4", "My done task", 4, state="s-done", assignees=["user-1"],
+            ),
         ]
 
         mock_cached_states.return_value = [
@@ -398,7 +408,7 @@ class TestWiList:
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
     @patch("planecli.commands.work_items.create_client")
-    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
@@ -409,7 +419,7 @@ class TestWiList:
         mock_cached_states,
         mock_cached_projects,
         mock_cached_members,
-        mock_paginate,
+        mock_cached_work_items,
         mock_create_client,
         mock_get_client,
         mock_get_ws,
@@ -424,8 +434,8 @@ class TestWiList:
         mock_cached_projects.return_value = [
             _make_project_dict("proj-1", "FE", "Frontend"),
         ]
-        mock_paginate.return_value = [
-            _make_work_item("wi-1", "Some task", 1, assignees=["user-1"]),
+        mock_cached_work_items.return_value = [
+            _make_work_item_dict("wi-1", "Some task", 1, assignees=["user-1"]),
         ]
         mock_cached_states.return_value = []
         mock_cached_labels.return_value = []
@@ -440,7 +450,7 @@ class TestWiList:
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
     @patch("planecli.commands.work_items.create_client")
-    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
@@ -451,7 +461,7 @@ class TestWiList:
         mock_cached_states,
         mock_cached_projects,
         mock_cached_members,
-        mock_paginate,
+        mock_cached_work_items,
         mock_create_client,
         mock_get_client,
         mock_get_ws,
@@ -471,9 +481,9 @@ class TestWiList:
             _make_project_dict("proj-2", "BE", "Backend"),
         ]
 
-        mock_paginate.side_effect = [
-            [_make_work_item("wi-1", "FE task", 1, state="s-todo")],
-            [_make_work_item("wi-2", "BE task", 2, state="s-progress")],
+        mock_cached_work_items.side_effect = [
+            [_make_work_item_dict("wi-1", "FE task", 1, state="s-todo")],
+            [_make_work_item_dict("wi-2", "BE task", 2, state="s-progress")],
         ]
 
         mock_cached_states.side_effect = [
@@ -493,7 +503,7 @@ class TestWiList:
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
     @patch("planecli.commands.work_items.create_client")
-    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
@@ -504,7 +514,7 @@ class TestWiList:
         mock_cached_states,
         mock_cached_projects,
         mock_cached_members,
-        mock_paginate,
+        mock_cached_work_items,
         mock_create_client,
         mock_get_client,
         mock_get_ws,
@@ -523,12 +533,11 @@ class TestWiList:
             _make_project_dict("proj-1", "FE", "Frontend"),
         ]
 
-        items = [
-            _make_work_item("wi-1", "Old item", 1, created_at="2026-02-01T12:00:00Z"),
-            _make_work_item("wi-2", "New item", 2, created_at="2026-02-10T12:00:00Z"),
-            _make_work_item("wi-3", "Mid item", 3, created_at="2026-02-05T12:00:00Z"),
+        mock_cached_work_items.return_value = [
+            _make_work_item_dict("wi-1", "Old item", 1, created_at="2026-02-01T12:00:00Z"),
+            _make_work_item_dict("wi-2", "New item", 2, created_at="2026-02-10T12:00:00Z"),
+            _make_work_item_dict("wi-3", "Mid item", 3, created_at="2026-02-05T12:00:00Z"),
         ]
-        mock_paginate.return_value = items
 
         mock_cached_states.return_value = []
         mock_cached_labels.return_value = []
@@ -546,7 +555,7 @@ class TestWiList:
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
     @patch("planecli.commands.work_items.create_client")
-    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
@@ -557,7 +566,7 @@ class TestWiList:
         mock_cached_states,
         mock_cached_projects,
         mock_cached_members,
-        mock_paginate,
+        mock_cached_work_items,
         mock_create_client,
         mock_get_client,
         mock_get_ws,
@@ -576,8 +585,9 @@ class TestWiList:
             _make_project_dict("proj-1", "FE", "Frontend"),
         ]
 
-        items = [_make_work_item("wi-1", "Fix bug", 1)]
-        mock_paginate.return_value = items
+        mock_cached_work_items.return_value = [
+            _make_work_item_dict("wi-1", "Fix bug", 1),
+        ]
 
         mock_cached_states.return_value = []
         mock_cached_labels.return_value = []
@@ -593,7 +603,7 @@ class TestWiList:
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
     @patch("planecli.commands.work_items.create_client")
-    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
@@ -604,7 +614,7 @@ class TestWiList:
         mock_cached_states,
         mock_cached_projects,
         mock_cached_members,
-        mock_paginate,
+        mock_cached_work_items,
         mock_create_client,
         mock_get_client,
         mock_get_ws,
@@ -617,9 +627,9 @@ class TestWiList:
         mock_cached_projects.return_value = [
             _make_project_dict("proj-1", "FE", "Frontend"),
         ]
-        mock_paginate.return_value = [
-            _make_work_item("wi-1", "Todo task", 1, state="s-todo"),
-            _make_work_item("wi-2", "Done task", 2, state="s-done"),
+        mock_cached_work_items.return_value = [
+            _make_work_item_dict("wi-1", "Todo task", 1, state="s-todo"),
+            _make_work_item_dict("wi-2", "Done task", 2, state="s-done"),
         ]
         mock_cached_states.return_value = [
             _make_state_dict("s-todo", "Todo"),
@@ -637,7 +647,7 @@ class TestWiList:
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
     @patch("planecli.commands.work_items.create_client")
-    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
@@ -648,7 +658,7 @@ class TestWiList:
         mock_cached_states,
         mock_cached_projects,
         mock_cached_members,
-        mock_paginate,
+        mock_cached_work_items,
         mock_create_client,
         mock_get_client,
         mock_get_ws,
@@ -661,10 +671,10 @@ class TestWiList:
         mock_cached_projects.return_value = [
             _make_project_dict("proj-1", "FE", "Frontend"),
         ]
-        mock_paginate.return_value = [
-            _make_work_item("wi-1", "Todo task", 1, state="s-todo"),
-            _make_work_item("wi-2", "Progress task", 2, state="s-progress"),
-            _make_work_item("wi-3", "Done task", 3, state="s-done"),
+        mock_cached_work_items.return_value = [
+            _make_work_item_dict("wi-1", "Todo task", 1, state="s-todo"),
+            _make_work_item_dict("wi-2", "Progress task", 2, state="s-progress"),
+            _make_work_item_dict("wi-3", "Done task", 3, state="s-done"),
         ]
         mock_cached_states.return_value = [
             _make_state_dict("s-todo", "Todo"),
@@ -684,7 +694,7 @@ class TestWiList:
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
     @patch("planecli.commands.work_items.create_client")
-    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
@@ -695,7 +705,7 @@ class TestWiList:
         mock_cached_states,
         mock_cached_projects,
         mock_cached_members,
-        mock_paginate,
+        mock_cached_work_items,
         mock_create_client,
         mock_get_client,
         mock_get_ws,
@@ -708,9 +718,9 @@ class TestWiList:
         mock_cached_projects.return_value = [
             _make_project_dict("proj-1", "FE", "Frontend"),
         ]
-        mock_paginate.return_value = [
-            _make_work_item("wi-1", "Bug task", 1, labels=["lbl-bug"]),
-            _make_work_item("wi-2", "Feature task", 2, labels=["lbl-feat"]),
+        mock_cached_work_items.return_value = [
+            _make_work_item_dict("wi-1", "Bug task", 1, labels=["lbl-bug"]),
+            _make_work_item_dict("wi-2", "Feature task", 2, labels=["lbl-feat"]),
         ]
         mock_cached_states.return_value = []
         mock_cached_labels.return_value = [
@@ -728,7 +738,7 @@ class TestWiList:
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
     @patch("planecli.commands.work_items.create_client")
-    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
@@ -739,7 +749,7 @@ class TestWiList:
         mock_cached_states,
         mock_cached_projects,
         mock_cached_members,
-        mock_paginate,
+        mock_cached_work_items,
         mock_create_client,
         mock_get_client,
         mock_get_ws,
@@ -752,10 +762,10 @@ class TestWiList:
         mock_cached_projects.return_value = [
             _make_project_dict("proj-1", "FE", "Frontend"),
         ]
-        mock_paginate.return_value = [
-            _make_work_item("wi-1", "Bug task", 1, labels=["lbl-bug"]),
-            _make_work_item("wi-2", "FE task", 2, labels=["lbl-fe"]),
-            _make_work_item("wi-3", "Backend task", 3, labels=["lbl-be"]),
+        mock_cached_work_items.return_value = [
+            _make_work_item_dict("wi-1", "Bug task", 1, labels=["lbl-bug"]),
+            _make_work_item_dict("wi-2", "FE task", 2, labels=["lbl-fe"]),
+            _make_work_item_dict("wi-3", "Backend task", 3, labels=["lbl-be"]),
         ]
         mock_cached_states.return_value = []
         mock_cached_labels.return_value = [
@@ -775,7 +785,7 @@ class TestWiList:
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
     @patch("planecli.commands.work_items.create_client")
-    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
@@ -786,7 +796,7 @@ class TestWiList:
         mock_cached_states,
         mock_cached_projects,
         mock_cached_members,
-        mock_paginate,
+        mock_cached_work_items,
         mock_create_client,
         mock_get_client,
         mock_get_ws,
@@ -799,10 +809,10 @@ class TestWiList:
         mock_cached_projects.return_value = [
             _make_project_dict("proj-1", "FE", "Frontend"),
         ]
-        mock_paginate.return_value = [
-            _make_work_item("wi-1", "Todo bug", 1, state="s-todo", labels=["lbl-bug"]),
-            _make_work_item("wi-2", "Todo feat", 2, state="s-todo", labels=["lbl-feat"]),
-            _make_work_item("wi-3", "Done bug", 3, state="s-done", labels=["lbl-bug"]),
+        mock_cached_work_items.return_value = [
+            _make_work_item_dict("wi-1", "Todo bug", 1, state="s-todo", labels=["lbl-bug"]),
+            _make_work_item_dict("wi-2", "Todo feat", 2, state="s-todo", labels=["lbl-feat"]),
+            _make_work_item_dict("wi-3", "Done bug", 3, state="s-done", labels=["lbl-bug"]),
         ]
         mock_cached_states.return_value = [
             _make_state_dict("s-todo", "Todo"),
@@ -823,7 +833,7 @@ class TestWiList:
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
     @patch("planecli.commands.work_items.create_client")
-    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
@@ -834,7 +844,7 @@ class TestWiList:
         mock_cached_states,
         mock_cached_projects,
         mock_cached_members,
-        mock_paginate,
+        mock_cached_work_items,
         mock_create_client,
         mock_get_client,
         mock_get_ws,
@@ -847,10 +857,10 @@ class TestWiList:
         mock_cached_projects.return_value = [
             _make_project_dict("proj-1", "FE", "Frontend"),
         ]
-        mock_paginate.return_value = [
-            _make_work_item("wi-1", "Todo task", 1, state="s-todo"),
-            _make_work_item("wi-2", "Done task", 2, state="s-done"),
-            _make_work_item("wi-3", "Progress task", 3, state="s-progress"),
+        mock_cached_work_items.return_value = [
+            _make_work_item_dict("wi-1", "Todo task", 1, state="s-todo"),
+            _make_work_item_dict("wi-2", "Done task", 2, state="s-done"),
+            _make_work_item_dict("wi-3", "Progress task", 3, state="s-progress"),
         ]
         mock_cached_states.return_value = [
             _make_state_dict("s-todo", "Todo"),
@@ -870,7 +880,7 @@ class TestWiList:
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
     @patch("planecli.commands.work_items.create_client")
-    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
     @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
@@ -881,7 +891,7 @@ class TestWiList:
         mock_cached_states,
         mock_cached_projects,
         mock_cached_members,
-        mock_paginate,
+        mock_cached_work_items,
         mock_create_client,
         mock_get_client,
         mock_get_ws,
@@ -894,8 +904,8 @@ class TestWiList:
         mock_cached_projects.return_value = [
             _make_project_dict("proj-1", "FE", "Frontend"),
         ]
-        mock_paginate.return_value = [
-            _make_work_item("wi-1", "Bug task", 1, labels=["lbl-bug"]),
+        mock_cached_work_items.return_value = [
+            _make_work_item_dict("wi-1", "Bug task", 1, labels=["lbl-bug"]),
         ]
         mock_cached_states.return_value = []
         mock_cached_labels.return_value = [

@@ -102,6 +102,16 @@ def configure() -> None:
 def main() -> None:
     """Entry point for the CLI."""
     from planecli.cache import cache, set_no_cache, setup_cache
+    from planecli.logging import setup_logging
+
+    # Handle --verbose flag via sys.argv (before cyclopts parses)
+    verbose = "--verbose" in sys.argv or "-v" in sys.argv
+    if "--verbose" in sys.argv:
+        sys.argv.remove("--verbose")
+    if "-v" in sys.argv:
+        sys.argv.remove("-v")
+
+    setup_logging(verbose=verbose)
 
     # Handle --no-cache flag via sys.argv (before cyclopts parses)
     no_cache = os.environ.get("PLANECLI_NO_CACHE", "").strip() in ("1", "true", "yes")

@@ -10,7 +10,7 @@ from cyclopts import Parameter
 from plane.errors import PlaneError
 from rich.text import Text
 
-from planecli.api.async_sdk import create_client, paginate_all_async, run_sdk
+from planecli.api.async_sdk import create_client, run_sdk
 from planecli.api.client import get_client, get_workspace, handle_api_error
 from planecli.formatters import output, output_single
 from planecli.utils.colors import PRIORITY_COLORS, colorize, lighten_hex
@@ -196,15 +196,15 @@ async def _resolve_project_id_async(project: str | None) -> str:
 
 async def _fetch_project_data(
     client, workspace: str, project_id: str
-) -> tuple[list, list[dict], list[dict]]:
+) -> tuple[list[dict], list[dict], list[dict]]:
     """Fetch work items, states, and labels for a project in parallel.
 
-    Work items are fetched fresh (not cached). States and labels use the cache.
+    All three use caching. Work items have a short TTL (2m).
     """
-    from planecli.cache import cached_list_labels, cached_list_states
+    from planecli.cache import cached_list_labels, cached_list_states, cached_list_work_items
 
     items, states, labels = await asyncio.gather(
-        paginate_all_async(client.work_items.list, workspace, project_id),
+        cached_list_work_items(workspace, project_id),
         cached_list_states(workspace, project_id),
         cached_list_labels(workspace, project_id),
     )
@@ -298,8 +298,9 @@ async def list_(
 
                 enriched_items = []
                 for i in items:
+                    item_dict = i if isinstance(i, dict) else i.model_dump()
                     enriched = _enrich_work_item(
-                        i.model_dump(),
+                        item_dict,
                         state_map=state_map,
                         member_map=member_map,
                         label_map=label_map,
@@ -520,6 +521,11 @@ async def create(
         item = await run_sdk(client.work_items.create, workspace, project_id, create_data)
         data = _enrich_work_item(item.model_dump())
 
+        # Invalidate work items cache for this project
+        from planecli.cache import invalidate_resource
+
+        await invalidate_resource("work_items", workspace, project_id)
+
         # Add to module if specified
         if module:
             module_data = await resolve_module_async(module, client, workspace, project_id)
@@ -646,6 +652,11 @@ async def update(
             client.work_items.update, workspace, project_id, item_id, update_data
         )
         data = _enrich_work_item(updated.model_dump())
+
+        # Invalidate work items cache for this project
+        from planecli.cache import invalidate_resource
+
+        await invalidate_resource("work_items", workspace, project_id)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -685,6 +696,11 @@ async def delete(
         item_name = item_data.get("name", item_id)
 
         await run_sdk(client.work_items.delete, workspace, project_id, item_id)
+
+        # Invalidate work items cache for this project
+        from planecli.cache import invalidate_resource
+
+        await invalidate_resource("work_items", workspace, project_id)
     except PlaneError as e:
         raise handle_api_error(e)
 

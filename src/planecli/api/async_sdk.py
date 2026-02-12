@@ -8,9 +8,9 @@ automatic retry on transient errors (429, 502, 503, 504).
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import Any
 
+from loguru import logger
 from plane.client import PlaneClient
 from plane.errors import HttpError
 from tenacity import (
@@ -23,10 +23,8 @@ from tenacity import (
 
 from planecli.api.client import get_config
 
-logger = logging.getLogger(__name__)
-
 # Limit concurrent API calls to prevent rate limiting
-_api_semaphore = asyncio.Semaphore(10)
+_api_semaphore = asyncio.Semaphore(4)
 
 
 def _is_retryable(exc: BaseException) -> bool:
@@ -39,7 +37,7 @@ def _is_retryable(exc: BaseException) -> bool:
 def _log_retry(retry_state: RetryCallState) -> None:
     """Log retry attempts via logging (stderr)."""
     logger.warning(
-        "Rate limited, retrying (%d/%d) in %.1fs...",
+        "Rate limited, retrying ({}/{}) in {:.1f}s...",
         retry_state.attempt_number,
         5,
         retry_state.idle_for,

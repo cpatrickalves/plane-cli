@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from loguru import logger
 from plane.client import PlaneClient
 from plane.errors import HttpError
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_random_exponential
@@ -61,6 +62,7 @@ def _paginate_all(list_fn, *args, **kwargs) -> list[Any]:
         params = PaginatedQueryParams(per_page=100, cursor=cursor)
         response = _fetch_page(list_fn, *args, params=params, **kwargs)
         all_results.extend(response.results)
+        logger.debug("Fetched page with {} results (cursor: {})", len(response.results), cursor)
         if not response.next_page_results:
             break
         cursor = response.next_cursor
@@ -449,12 +451,10 @@ async def resolve_user_async(
     query: str, client: PlaneClient, workspace: str
 ) -> dict[str, Any]:
     """Async version of resolve_user."""
-    from planecli.api.async_sdk import run_sdk
-    from planecli.cache import cached_list_members
+    from planecli.cache import cached_get_me, cached_list_members
 
     if query.lower() == "me":
-        me = await run_sdk(client.users.get_me)
-        return me.model_dump()
+        return await cached_get_me(workspace)
 
     members = await cached_list_members(workspace)
 
