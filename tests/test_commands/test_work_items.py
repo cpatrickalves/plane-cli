@@ -336,6 +336,107 @@ class TestWiList:
         assert data[0]["name"] == "Assigned to me"
 
     @patch("planecli.commands.work_items.output")
+    @patch("planecli.commands.work_items.resolve_user_async")
+    @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
+    @patch("planecli.commands.work_items.get_client")
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_labels", new_callable=AsyncMock)
+    async def test_list_filter_by_assignee_and_multiple_states(
+        self,
+        mock_cached_labels,
+        mock_cached_states,
+        mock_cached_projects,
+        mock_cached_members,
+        mock_paginate,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_resolve_user,
+        mock_output,
+    ):
+        """--assignee me --state 'In Review,In Progress' uses AND logic."""
+        mock_get_client.return_value = MagicMock()
+        mock_create_client.return_value = MagicMock()
+
+        mock_cached_members.return_value = [
+            _make_member_dict("user-1", "Patrick", "Alves", "Patrick"),
+            _make_member_dict("user-2", "Braulio", "Silva", "Braulio"),
+        ]
+
+        mock_cached_projects.return_value = [
+            _make_project_dict("proj-1", "FE", "Frontend"),
+        ]
+
+        mock_paginate.return_value = [
+            _make_work_item("wi-1", "My progress task", 1, state="s-progress", assignees=["user-1"]),
+            _make_work_item("wi-2", "Other progress task", 2, state="s-progress", assignees=["user-2"]),
+            _make_work_item("wi-3", "My review task", 3, state="s-review", assignees=["user-1"]),
+            _make_work_item("wi-4", "My done task", 4, state="s-done", assignees=["user-1"]),
+        ]
+
+        mock_cached_states.return_value = [
+            _make_state_dict("s-progress", "In Progress"),
+            _make_state_dict("s-review", "In Review"),
+            _make_state_dict("s-done", "Done"),
+        ]
+        mock_cached_labels.return_value = []
+
+        mock_resolve_user.return_value = {"id": "user-1", "display_name": "Patrick"}
+
+        await list_(assignee="me", state="In Review,In Progress")
+
+        data = mock_output.call_args[0][0]
+        assert len(data) == 2
+        names = {d["name"] for d in data}
+        assert names == {"My progress task", "My review task"}
+
+    @patch("planecli.commands.work_items.resolve_user_async")
+    @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
+    @patch("planecli.commands.work_items.get_client")
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.commands.work_items.paginate_all_async")
+    @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_labels", new_callable=AsyncMock)
+    async def test_list_filter_by_assignee_resolution_error(
+        self,
+        mock_cached_labels,
+        mock_cached_states,
+        mock_cached_projects,
+        mock_cached_members,
+        mock_paginate,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_resolve_user,
+    ):
+        """--assignee with invalid user raises error instead of silently passing."""
+        from planecli.exceptions import ResourceNotFoundError
+
+        mock_get_client.return_value = MagicMock()
+        mock_create_client.return_value = MagicMock()
+        mock_cached_members.return_value = []
+        mock_cached_projects.return_value = [
+            _make_project_dict("proj-1", "FE", "Frontend"),
+        ]
+        mock_paginate.return_value = [
+            _make_work_item("wi-1", "Some task", 1, assignees=["user-1"]),
+        ]
+        mock_cached_states.return_value = []
+        mock_cached_labels.return_value = []
+
+        mock_resolve_user.side_effect = ResourceNotFoundError("User", "nonexistent")
+
+        import pytest
+        with pytest.raises(ResourceNotFoundError):
+            await list_(assignee="nonexistent")
+
+    @patch("planecli.commands.work_items.output")
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
     @patch("planecli.commands.work_items.create_client")

@@ -329,19 +329,16 @@ async def list_(
 
     # Filter by assignee
     if assignee:
-        try:
-            user = await resolve_user_async(assignee, client, workspace)
-            user_id = user["id"]
-            data = [
-                d for d in data
-                if user_id in (d.get("assignees") or [])
-                or any(
-                    (isinstance(a, dict) and a.get("id") == user_id)
-                    for a in (d.get("assignees") or [])
-                )
-            ]
-        except Exception:
-            pass
+        user = await resolve_user_async(assignee, client, workspace)
+        user_id = user["id"]
+        data = [
+            d for d in data
+            if user_id in (d.get("assignees") or [])
+            or any(
+                (isinstance(a, dict) and a.get("id") == user_id)
+                for a in (d.get("assignees") or [])
+            )
+        ]
 
     # Filter by state (comma-separated, OR logic, substring match)
     if state:
