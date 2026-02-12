@@ -10,6 +10,7 @@ from typing import Any
 
 from plane.client import PlaneClient
 from plane.errors import HttpError
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_random_exponential
 
 from planecli.exceptions import ResourceNotFoundError
 from planecli.utils.fuzzy import find_best_match, find_matches
@@ -26,6 +27,30 @@ def _is_uuid(value: str) -> bool:
     return bool(UUID_PATTERN.match(value))
 
 
+def _is_retryable(exc: BaseException) -> bool:
+    """Check if an exception is retryable (429 or 502/503/504)."""
+    return isinstance(exc, HttpError) and (
+        exc.status_code == 429 or exc.status_code in (502, 503, 504)
+    )
+
+
+def _reraise_if_retryable(exc: HttpError) -> None:
+    """Re-raise transient HTTP errors so tenacity can retry them."""
+    if _is_retryable(exc):
+        raise
+
+
+@retry(
+    retry=retry_if_exception(_is_retryable),
+    wait=wait_random_exponential(min=1, max=60),
+    stop=stop_after_attempt(5),
+    reraise=True,
+)
+def _fetch_page(list_fn: Any, *args: Any, **kwargs: Any) -> Any:
+    """Fetch a single page with retry on transient errors."""
+    return list_fn(*args, **kwargs)
+
+
 def _paginate_all(list_fn, *args, **kwargs) -> list[Any]:
     """Fetch all pages from a paginated SDK method."""
     from plane.models.query_params import PaginatedQueryParams
@@ -34,7 +59,7 @@ def _paginate_all(list_fn, *args, **kwargs) -> list[Any]:
     cursor = None
     while True:
         params = PaginatedQueryParams(per_page=100, cursor=cursor)
-        response = list_fn(*args, params=params, **kwargs)
+        response = _fetch_page(list_fn, *args, params=params, **kwargs)
         all_results.extend(response.results)
         if not response.next_page_results:
             break
@@ -52,7 +77,8 @@ def resolve_project(query: str, client: PlaneClient, workspace: str) -> dict[str
         try:
             project = client.projects.retrieve(workspace, query)
             return project.model_dump()
-        except HttpError:
+        except HttpError as e:
+            _reraise_if_retryable(e)
             raise ResourceNotFoundError("Project", query)
 
     # Fetch all projects for matching
@@ -88,7 +114,8 @@ def resolve_work_item(
         try:
             item = client.work_items.retrieve(workspace, project_id, query)
             return item.model_dump()
-        except HttpError:
+        except HttpError as e:
+            _reraise_if_retryable(e)
             raise ResourceNotFoundError("Work item", query)
 
     # Try identifier pattern (ABC-123) using SDK's retrieve_by_identifier
@@ -101,7 +128,8 @@ def resolve_work_item(
                 workspace, project_identifier, issue_number
             )
             return item.model_dump()
-        except HttpError:
+        except HttpError as e:
+            _reraise_if_retryable(e)
             raise ResourceNotFoundError("Work item", query)
 
     # Fuzzy name match - fetch all work items in project
@@ -133,7 +161,8 @@ def resolve_work_item_across_projects(
             )
             item_dict = item.model_dump()
             return item_dict, item_dict.get("project", "")
-        except HttpError:
+        except HttpError as e:
+            _reraise_if_retryable(e)
             raise ResourceNotFoundError("Work item", query)
 
     # UUID - need project context
@@ -144,7 +173,8 @@ def resolve_work_item_across_projects(
             try:
                 item = client.work_items.retrieve(workspace, p.id, query)
                 return item.model_dump(), p.id
-            except HttpError:
+            except HttpError as e:
+                _reraise_if_retryable(e)
                 continue
         raise ResourceNotFoundError("Work item", query)
 
@@ -207,7 +237,8 @@ def resolve_module(
         try:
             module = client.modules.retrieve(workspace, project_id, query)
             return module.model_dump()
-        except HttpError:
+        except HttpError as e:
+            _reraise_if_retryable(e)
             raise ResourceNotFoundError("Module", query)
 
     modules = _paginate_all(client.modules.list, workspace, project_id)
@@ -230,7 +261,8 @@ def resolve_state(
         try:
             state = client.states.retrieve(workspace, project_id, query)
             return state.model_dump()
-        except HttpError:
+        except HttpError as e:
+            _reraise_if_retryable(e)
             raise ResourceNotFoundError("State", query)
 
     states = _paginate_all(client.states.list, workspace, project_id)
@@ -253,7 +285,8 @@ def resolve_cycle(
         try:
             cycle = client.cycles.retrieve(workspace, project_id, query)
             return cycle.model_dump()
-        except HttpError:
+        except HttpError as e:
+            _reraise_if_retryable(e)
             raise ResourceNotFoundError("Cycle", query)
 
     cycles = _paginate_all(client.cycles.list, workspace, project_id)
@@ -276,7 +309,8 @@ def resolve_label(
         try:
             label = client.labels.retrieve(workspace, project_id, name)
             return label.model_dump()
-        except HttpError:
+        except HttpError as e:
+            _reraise_if_retryable(e)
             raise ResourceNotFoundError("Label", name)
 
     labels = _paginate_all(client.labels.list, workspace, project_id)
@@ -304,7 +338,8 @@ async def resolve_project_async(
         try:
             project = await run_sdk(client.projects.retrieve, workspace, query)
             return project.model_dump()
-        except HttpError:
+        except HttpError as e:
+            _reraise_if_retryable(e)
             raise ResourceNotFoundError("Project", query)
 
     projects = await cached_list_projects(workspace)
@@ -334,7 +369,8 @@ async def resolve_work_item_async(
         try:
             item = await run_sdk(client.work_items.retrieve, workspace, project_id, query)
             return item.model_dump()
-        except HttpError:
+        except HttpError as e:
+            _reraise_if_retryable(e)
             raise ResourceNotFoundError("Work item", query)
 
     id_match = ISSUE_ID_PATTERN.match(query)
@@ -347,7 +383,8 @@ async def resolve_work_item_async(
                 workspace, project_identifier, issue_number,
             )
             return item.model_dump()
-        except HttpError:
+        except HttpError as e:
+            _reraise_if_retryable(e)
             raise ResourceNotFoundError("Work item", query)
 
     items = await paginate_all_async(client.work_items.list, workspace, project_id)
@@ -379,7 +416,8 @@ async def resolve_work_item_across_projects_async(
             )
             item_dict = item.model_dump()
             return item_dict, item_dict.get("project", "")
-        except HttpError:
+        except HttpError as e:
+            _reraise_if_retryable(e)
             raise ResourceNotFoundError("Work item", query)
 
     if _is_uuid(query):
@@ -391,7 +429,8 @@ async def resolve_work_item_across_projects_async(
                     client.work_items.retrieve, workspace, p["id"], query
                 )
                 return item.model_dump(), p["id"]
-            except HttpError:
+            except HttpError as e:
+                _reraise_if_retryable(e)
                 return None
 
         results = await asyncio.gather(*[_try_project(p) for p in projects])
@@ -457,7 +496,8 @@ async def resolve_module_async(
         try:
             module = await run_sdk(client.modules.retrieve, workspace, project_id, query)
             return module.model_dump()
-        except HttpError:
+        except HttpError as e:
+            _reraise_if_retryable(e)
             raise ResourceNotFoundError("Module", query)
 
     modules = await cached_list_modules(workspace, project_id)
@@ -480,7 +520,8 @@ async def resolve_state_async(
         try:
             state = await run_sdk(client.states.retrieve, workspace, project_id, query)
             return state.model_dump()
-        except HttpError:
+        except HttpError as e:
+            _reraise_if_retryable(e)
             raise ResourceNotFoundError("State", query)
 
     states = await cached_list_states(workspace, project_id)
@@ -503,7 +544,8 @@ async def resolve_cycle_async(
         try:
             cycle = await run_sdk(client.cycles.retrieve, workspace, project_id, query)
             return cycle.model_dump()
-        except HttpError:
+        except HttpError as e:
+            _reraise_if_retryable(e)
             raise ResourceNotFoundError("Cycle", query)
 
     cycles = await cached_list_cycles(workspace, project_id)
@@ -526,7 +568,8 @@ async def resolve_label_async(
         try:
             label = await run_sdk(client.labels.retrieve, workspace, project_id, name)
             return label.model_dump()
-        except HttpError:
+        except HttpError as e:
+            _reraise_if_retryable(e)
             raise ResourceNotFoundError("Label", name)
 
     labels = await cached_list_labels(workspace, project_id)

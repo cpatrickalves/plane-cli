@@ -50,5 +50,10 @@ def handle_api_error(err: PlaneError) -> PlaneCLIError:
     if isinstance(err, HttpError):
         if err.status_code == 401:
             return AuthenticationError()
+        if err.status_code == 429:
+            return APIError(
+                "Rate limited by Plane API after multiple retries. Try again later.",
+                status_code=429,
+            )
         return APIError(str(err), status_code=err.status_code)
     return APIError(str(err))
