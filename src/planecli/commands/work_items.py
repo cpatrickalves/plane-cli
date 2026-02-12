@@ -38,15 +38,6 @@ WI_COLUMNS = [
     ("created_at", "Created"),
 ]
 
-WI_COLUMNS_ALL = [
-    ("project_identifier", "Project"),
-    ("sequence_id", "ID"),
-    ("name", "Title"),
-    ("priority", "Priority"),
-    ("state_detail_name", "State"),
-    ("assignee_names", "Assignees"),
-    ("created_at", "Created"),
-]
 
 WI_FIELDS = [
     ("id", "UUID"),
@@ -373,7 +364,7 @@ async def list_(
         data.sort(key=lambda x: x.get("created_at") or "", reverse=True)
 
     data = data[:limit]
-    columns = WI_COLUMNS if project else WI_COLUMNS_ALL
+    columns = WI_COLUMNS
     output(data, columns, title="Work Items", as_json=json)
 
 
