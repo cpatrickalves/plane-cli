@@ -28,6 +28,7 @@ def _make_work_item_dict(
     labels: list | None = None,
     created_at: str = "2026-02-10T12:00:00Z",
     updated_at: str = "2026-02-10T12:00:00Z",
+    parent: str | None = None,
 ) -> dict:
     """Return a work item as a dict (how cached_list_work_items returns them)."""
     return {
@@ -38,6 +39,7 @@ def _make_work_item_dict(
         "assignees": assignees or [],
         "labels": labels or [],
         "priority": "medium",
+        "parent": parent,
         "created_at": created_at,
         "updated_at": updated_at,
     }
@@ -642,6 +644,53 @@ class TestWiList:
         assert len(data) == 2
         names = {d["name"] for d in data}
         assert names == {"Todo task", "Progress task"}
+
+    @patch("planecli.commands.work_items.output")
+    @patch("planecli.commands.work_items.resolve_work_item_across_projects_async")
+    @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
+    @patch("planecli.commands.work_items.get_client")
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_labels", new_callable=AsyncMock)
+    async def test_list_filter_by_parent(
+        self,
+        mock_cached_labels,
+        mock_cached_states,
+        mock_cached_projects,
+        mock_cached_members,
+        mock_cached_work_items,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_resolve_parent,
+        mock_output,
+    ):
+        """--parent ABC-1 returns only items whose parent matches the resolved UUID."""
+        mock_get_client.return_value = MagicMock()
+        mock_create_client.return_value = MagicMock()
+        mock_cached_members.return_value = []
+        mock_cached_projects.return_value = [
+            _make_project_dict("proj-1", "FE", "Frontend"),
+        ]
+        mock_cached_work_items.return_value = [
+            _make_work_item_dict("wi-1", "Child A", 1, parent="parent-uuid"),
+            _make_work_item_dict("wi-2", "Child B", 2, parent="parent-uuid"),
+            _make_work_item_dict("wi-3", "Unrelated", 3, parent="other-uuid"),
+            _make_work_item_dict("wi-4", "Orphan", 4, parent=None),
+        ]
+        mock_cached_states.return_value = []
+        mock_cached_labels.return_value = []
+        mock_resolve_parent.return_value = ({"id": "parent-uuid"}, "proj-1")
+
+        await list_(parent="FE-99")
+
+        mock_resolve_parent.assert_called_once()
+        data = mock_output.call_args[0][0]
+        names = {d["name"] for d in data}
+        assert names == {"Child A", "Child B"}
 
     @patch("planecli.commands.work_items.output")
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
