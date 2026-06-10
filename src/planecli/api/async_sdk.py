@@ -67,8 +67,13 @@ def create_client() -> PlaneClient:
     return PlaneClient(base_url=config.base_url, api_key=config.api_key)
 
 
-async def paginate_all_async(list_fn: Any, *args: Any, **kwargs: Any) -> list[Any]:
+async def paginate_all_async(
+    list_fn: Any,
+    *args: Any,
+    query_params_cls: type[Any] | None = None,
+    **kwargs: Any,
+) -> list[Any]:
     """Async version of _paginate_all -- runs entire pagination in a thread."""
     from planecli.utils.resolve import _paginate_all
 
-    return await run_sdk(_paginate_all, list_fn, *args, **kwargs)
+    return await run_sdk(_paginate_all, list_fn, *args, query_params_cls=query_params_cls, **kwargs)
