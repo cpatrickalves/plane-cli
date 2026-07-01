@@ -10,6 +10,7 @@ from plane.errors import PlaneError
 
 from planecli.api.async_sdk import paginate_all_async, run_sdk
 from planecli.api.client import get_client, get_workspace, handle_api_error
+from planecli.exceptions import ValidationError
 from planecli.formatters import output, output_single
 from planecli.utils.resolve import resolve_module_async, resolve_project_async
 
@@ -17,6 +18,45 @@ module_app = cyclopts.App(
     name=["module", "modules"],
     help="Manage modules.",
 )
+
+# Valid module statuses (Plane ModuleStatusEnum).
+MODULE_STATUSES = (
+    "backlog",
+    "planned",
+    "in-progress",
+    "paused",
+    "completed",
+    "cancelled",
+)
+
+# Convenience aliases (English + Portuguese) mapped to canonical status values.
+_STATUS_ALIASES = {
+    "in progress": "in-progress",
+    "in_progress": "in-progress",
+    "inprogress": "in-progress",
+    "canceled": "cancelled",
+    # Portuguese
+    "backlog": "backlog",
+    "planejado": "planned",
+    "em andamento": "in-progress",
+    "pausado": "paused",
+    "concluido": "completed",
+    "concluído": "completed",
+    "cancelado": "cancelled",
+}
+
+
+def _normalize_status(value: str) -> str:
+    """Normalize and validate a module status. Raises ValueError on invalid input."""
+    key = value.strip().lower()
+    key = _STATUS_ALIASES.get(key, key)
+    if key not in MODULE_STATUSES:
+        allowed = ", ".join(MODULE_STATUSES)
+        raise ValidationError(
+            f"Invalid status '{value}'.",
+            hint=f"Valid values: {allowed}.",
+        )
+    return key
 
 MODULE_COLUMNS = [
     ("id", "ID"),
@@ -115,6 +155,7 @@ async def create(
     description: Annotated[str | None, Parameter(alias="-d")] = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    status: str | None = None,
     json: bool = False,
 ) -> None:
     """Create a new module.
@@ -131,10 +172,14 @@ async def create(
         Start date (YYYY-MM-DD).
     end_date
         End date (YYYY-MM-DD).
+    status
+        Module status: backlog, planned, in-progress, paused, completed, cancelled.
     """
     from plane.models.modules import CreateModule
 
     try:
+        normalized_status = _normalize_status(status) if status else None
+
         client = get_client()
         workspace = get_workspace()
         proj = await resolve_project_async(project, client, workspace)
@@ -147,6 +192,8 @@ async def create(
             create_data.start_date = start_date
         if end_date:
             create_data.target_date = end_date
+        if normalized_status:
+            create_data.status = normalized_status
 
         mod = await run_sdk(client.modules.create, workspace, project_id, create_data)
         data = mod.model_dump()
@@ -169,6 +216,7 @@ async def update(
     description: Annotated[str | None, Parameter(alias="-d")] = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    status: str | None = None,
     json: bool = False,
 ) -> None:
     """Update a module.
@@ -187,10 +235,14 @@ async def update(
         New start date (YYYY-MM-DD).
     end_date
         New end date (YYYY-MM-DD).
+    status
+        New status: backlog, planned, in-progress, paused, completed, cancelled.
     """
     from plane.models.modules import UpdateModule
 
     try:
+        normalized_status = _normalize_status(status) if status else None
+
         client = get_client()
         workspace = get_workspace()
         proj = await resolve_project_async(project, client, workspace)
@@ -208,6 +260,8 @@ async def update(
             update_data.start_date = start_date
         if end_date:
             update_data.target_date = end_date
+        if normalized_status:
+            update_data.status = normalized_status
 
         updated = await run_sdk(
             client.modules.update, workspace, project_id, module_id, update_data

@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Adicionado
+- Opção `--status` nos comandos `module create` e `module update` (valores: `backlog`, `planned`, `in-progress`, `paused`, `completed`, `cancelled`), com aliases em inglês e português (ex.: `em andamento`, `concluído`, `cancelado`) e validação com mensagem de erro clara
+
 ## [0.3.0] - 2026-02-12
 
 ### Adicionado
