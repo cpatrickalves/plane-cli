@@ -70,13 +70,6 @@ def _paginate_all(list_fn, *args, query_params_cls: type[Any] | None = None, **k
     return all_results
 
 
-def _paginate_work_items(list_fn: Any, *args: Any, **kwargs: Any) -> list[Any]:
-    """Fetch all work-item pages with the SDK's work-item query params model."""
-    from plane.models.query_params import WorkItemQueryParams
-
-    return _paginate_all(list_fn, *args, query_params_cls=WorkItemQueryParams, **kwargs)
-
-
 def resolve_project(query: str, client: PlaneClient, workspace: str) -> dict[str, Any]:
     """Resolve a project by UUID, identifier, or fuzzy name match.
 
@@ -146,7 +139,14 @@ def resolve_work_item(
             raise ResourceNotFoundError("Work item", query)
 
     # Fuzzy name match - fetch all work items in project
-    items = _paginate_work_items(client.work_items.list, workspace, project_id)
+    from plane.models.query_params import WorkItemQueryParams
+
+    items = _paginate_all(
+        client.work_items.list,
+        workspace,
+        project_id,
+        query_params_cls=WorkItemQueryParams,
+    )
 
     match = find_best_match(query, items, key=lambda i: i.name or "")
     if match:
