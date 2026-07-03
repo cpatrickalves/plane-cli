@@ -18,6 +18,7 @@ TTL_STATIC = "1h"  # members
 TTL_CONFIG = "10m"  # states, labels
 TTL_MODERATE = "5m"  # projects, modules, cycles
 TTL_WORK_ITEMS = "2m"  # work items: short TTL to avoid stale data
+TTL_COMMENTS = "1m"  # comments are volatile; short TTL bounds staleness
 
 # Module-level flag for --no-cache behavior
 _no_cache = False
@@ -68,12 +69,20 @@ def _url_hash() -> str:
     return hashlib.sha256(config.base_url.encode()).hexdigest()[:12]
 
 
-def _cache_key(resource: str, workspace: str, project_id: str | None = None) -> str:
-    """Build a cache key."""
+def _cache_key(
+    resource: str,
+    workspace: str,
+    project_id: str | None = None,
+    item_id: str | None = None,
+) -> str:
+    """Build a cache key, optionally scoped by project and work item."""
     url_hash = _url_hash()
+    key = f"{url_hash}:{resource}:{workspace}"
     if project_id:
-        return f"{url_hash}:{resource}:{workspace}:{project_id}"
-    return f"{url_hash}:{resource}:{workspace}"
+        key += f":{project_id}"
+        if item_id:
+            key += f":{item_id}"
+    return key
 
 
 async def _cached_list(
@@ -226,6 +235,26 @@ async def cached_list_work_items(workspace: str, project_id: str) -> list[dict[s
     return await _cached_list(key, TTL_WORK_ITEMS, _fetch)
 
 
+async def cached_list_comments(
+    workspace: str, project_id: str, item_id: str
+) -> list[dict[str, Any]]:
+    """Fetch a work item's comments with short-lived caching (TTL: 1m).
+
+    Keyed per work item so different items never collide. Returns plain dicts.
+    """
+    from planecli.api.async_sdk import create_client, paginate_all_async
+
+    key = _cache_key("comments", workspace, project_id, item_id=item_id)
+
+    async def _fetch() -> list[Any]:
+        client = create_client()
+        return await paginate_all_async(
+            client.work_items.comments.list, workspace, project_id, item_id
+        )
+
+    return await _cached_list(key, TTL_COMMENTS, _fetch)
+
+
 async def cached_get_me(workspace: str) -> dict[str, Any]:
     """Cache the current user (TTL: 1h)."""
     from planecli.api.async_sdk import create_client, run_sdk
@@ -271,10 +300,13 @@ async def cached_list_cycles(workspace: str, project_id: str) -> list[dict[str, 
 
 
 async def invalidate_resource(
-    resource: str, workspace: str, project_id: str | None = None
+    resource: str,
+    workspace: str,
+    project_id: str | None = None,
+    item_id: str | None = None,
 ) -> None:
     """Invalidate a specific cached resource."""
-    key = _cache_key(resource, workspace, project_id)
+    key = _cache_key(resource, workspace, project_id, item_id)
     try:
         await cache.delete(key)
     except Exception as exc:

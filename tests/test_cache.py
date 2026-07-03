@@ -9,6 +9,7 @@ from planecli.cache import (
     _cached_list,
     cache,
     cached_get_me,
+    cached_list_comments,
     cached_list_cycles,
     cached_list_labels,
     cached_list_members,
@@ -320,6 +321,72 @@ async def test_cache_write_error_still_returns_data(mock_logger, mock_hash):
     assert result == [{"id": "1", "name": "WriteError"}]
     mock_logger.warning.assert_called()
     assert "Cache write error" in str(mock_logger.warning.call_args)
+
+
+# --- Tests for per-item comment caching (cached_list_comments) ---
+
+
+@patch("planecli.cache._url_hash", return_value="abc123")
+def test_cache_key_with_item(mock_hash):
+    key = _cache_key("comments", "my-workspace", "proj-uuid", "item-uuid")
+    assert key == "abc123:comments:my-workspace:proj-uuid:item-uuid"
+
+
+@patch("planecli.cache._url_hash", return_value="abc123")
+def test_cache_key_item_ignored_without_project(mock_hash):
+    # item_id only scopes when a project_id is also present
+    key = _cache_key("comments", "my-workspace", None, "item-uuid")
+    assert key == "abc123:comments:my-workspace"
+
+
+@patch("planecli.cache._url_hash", return_value="abc123")
+@patch("planecli.api.async_sdk.create_client")
+@patch("planecli.api.async_sdk.paginate_all_async")
+async def test_cached_list_comments(mock_paginate, mock_create_client, mock_hash):
+    comment = _make_model({"id": "c1", "comment_html": "<p>hi</p>", "actor": "u1"})
+    mock_paginate.return_value = [comment]
+
+    result = await cached_list_comments("my-ws", "proj-1", "item-1")
+    assert result[0]["id"] == "c1"
+    # Delegates to paginate_all_async (fetches ALL pages), passing the 3-arg list fn
+    mock_paginate.assert_called_once()
+    assert mock_paginate.call_args[0][1:] == ("my-ws", "proj-1", "item-1")
+
+    # Second call hits cache
+    result2 = await cached_list_comments("my-ws", "proj-1", "item-1")
+    assert result2 == result
+    assert mock_paginate.call_count == 1
+
+
+@patch("planecli.cache._url_hash", return_value="abc123")
+@patch("planecli.api.async_sdk.create_client")
+@patch("planecli.api.async_sdk.paginate_all_async")
+async def test_cached_list_comments_keys_per_item(mock_paginate, mock_create_client, mock_hash):
+    """Two work items cache independently (no cross-item collision)."""
+    mock_paginate.side_effect = [
+        [_make_model({"id": "c1"})],
+        [_make_model({"id": "c2"})],
+    ]
+    r1 = await cached_list_comments("ws", "p1", "item-1")
+    r2 = await cached_list_comments("ws", "p1", "item-2")
+    assert r1[0]["id"] == "c1"
+    assert r2[0]["id"] == "c2"
+    assert mock_paginate.call_count == 2
+
+    # Re-fetch item-1: cache hit, no new paginate call
+    r1b = await cached_list_comments("ws", "p1", "item-1")
+    assert r1b == r1
+    assert mock_paginate.call_count == 2
+
+
+@patch("planecli.cache._url_hash", return_value="abc123")
+async def test_invalidate_resource_with_item(mock_hash):
+    await cache.set("abc123:comments:ws:p1:item-1", [{"id": "c1"}], expire="1m")
+    assert await cache.get("abc123:comments:ws:p1:item-1") is not None
+
+    await invalidate_resource("comments", "ws", "p1", "item-1")
+
+    assert await cache.get("abc123:comments:ws:p1:item-1") is None
 
 
 # --- Tests for different workspaces/projects isolation ---
