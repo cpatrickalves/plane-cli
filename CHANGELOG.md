@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- `wi show` now bundles the work item's comments in the same call. In `--json` output the `comments` field is a list (`[]` when there are none) or `null` if the comment fetch failed — the work item still returns and the command exits 0. In human output a `Comments` section follows the details, showing `(none)` or `(failed to load)` as appropriate
+- `--no-comments` flag on `wi show` to skip the comment fetch (the `comments` key is then omitted from JSON)
+- `--limit` / `-l` option on `comment ls` (default 50): selects the most recent N comments, still rendered oldest → newest
+- Per-work-item comment cache (1-minute TTL), invalidated on `comment create`/`update`/`delete`
+
 ## [0.5.1] - 2026-07-03
 
 <!-- The 0.4.x/0.5.0 tags were not documented separately; the user-facing

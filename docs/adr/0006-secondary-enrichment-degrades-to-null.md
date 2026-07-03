@@ -53,9 +53,17 @@ The contract:
 
 The pattern is enforced in `commands/work_items.py::show`: the comment fetch is a standalone
 block after work-item enrichment, wrapped in `except (PlaneError, PlaneCLIError)`, setting
-`data["comments"] = None` on failure. The shared `fetch_issue_comments` helper is **raise-only**;
-each caller owns its failure policy — `comment ls`, whose entire purpose *is* comments, keeps
-hard-failing with a proper exit code.
+`data["comments"] = None` on failure. On the comment fetch itself the shared
+`fetch_issue_comments` helper is **raise-only** — each caller owns that failure policy, so
+`comment ls`, whose entire purpose *is* comments, keeps hard-failing with a proper exit code.
+
+The same "don't let a nicety sink the payload" logic applies *one level deeper, inside* the
+helper. Resolving each `actor` UUID to a display name needs the workspace members list — a
+**tertiary** enrichment. If that members fetch fails (`PlaneError`/`PlaneCLIError`), the helper
+degrades to an empty members map and `actor_name` falls back to the raw UUID (per
+`_enrich_comment`), rather than raising and losing comments that already loaded. This is the
+narrow exception to "raise-only": the helper still raises when the **comments** call fails
+(the payload), but absorbs a failure of the **author-name** lookup (a label on the payload).
 
 ### Pros and Cons of the Options
 

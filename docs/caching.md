@@ -39,14 +39,16 @@ Only **slowly-changing resource definitions** are cached. Data that changes freq
 | Labels | 10 min | Label definitions per project | Resolving `--labels` flags, displaying label names/colors |
 | Estimate points | 10 min | The `{id, value}` pairs used for effort estimates | Resolving `--estimate` flags (derived from work items — see [ADR-0003](adr/0003-sdk-escape-hatches.md)) |
 | Work items | **2 min** | The work-item list per project | `wi list` and fuzzy name resolution |
+| Comments | **1 min** | A single work item's comments | `comment ls` and the comments bundled by `wi show` |
 
-The TTLs follow a **volatility gradient** — the more often a resource changes, the shorter its lifetime. Work items get the shortest TTL (2 min) because they change frequently, but a short window still eliminates repeated calls when running `wi list` several times in a row. The rationale for these tiers is recorded in [ADR-0004](adr/0004-disk-cache-ttls-and-keys.md).
+The TTLs follow a **volatility gradient** — the more often a resource changes, the shorter its lifetime. Comments get the shortest TTL (1 min) because they are the most volatile, followed by work items (2 min); a short window still eliminates repeated calls when opening the same item several times in a row. The rationale for these tiers is recorded in [ADR-0004](adr/0004-disk-cache-ttls-and-keys.md).
+
+Comments are cached **per work item** (keyed by `item_id`, not just the project), so two items never collide. The create/update/delete comment commands invalidate that item's entry (see [Cache Invalidation](#cache-invalidation)).
 
 ### NOT Cached
 
 | Resource | Reason |
 |----------|--------|
-| Comments | Change frequently |
 | Documents / Pages | Change frequently |
 | Individual resource lookups (by UUID/identifier) | Single-resource fetches should always be fresh |
 
@@ -56,11 +58,14 @@ The TTLs follow a **volatility gradient** — the more often a resource changes,
 
 All cache keys are prefixed with a hash of the Plane `base_url` to isolate data across different Plane instances. This prevents returning cached data from one instance when you switch to another.
 
-Key format: `{url_hash}:{resource}:{workspace}[:{project_id}]`
+Key format: `{url_hash}:{resource}:{workspace}[:{project_id}[:{item_id}]]`
+
+The optional `item_id` level scopes a resource to a single work item — currently only comments use it, so each item's comments cache independently.
 
 Examples:
 - `a1b2c3d4e5f6:members:my-workspace`
 - `a1b2c3d4e5f6:states:my-workspace:project-uuid-123`
+- `a1b2c3d4e5f6:comments:my-workspace:project-uuid-123:item-uuid-456`
 
 ## Cache Invalidation
 
@@ -75,6 +80,7 @@ Write commands automatically invalidate the relevant cache entry:
 | `label create/update/delete` | Labels for that project |
 | `module create/update/delete` | Modules for that project |
 | `cycle create/update/delete` | Cycles for that project |
+| `comment create/update/delete` | Comments for that specific work item |
 | `configure` | Entire cache (credentials may have changed) |
 
 Members are not mutated via the CLI, so they rely on TTL expiry only.
