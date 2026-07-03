@@ -54,6 +54,30 @@ def _enrich_comment(data: dict, members_map: dict[str, str] | None = None) -> di
     return data
 
 
+async def fetch_issue_comments(
+    workspace: str, project_id: str, item_id: str
+) -> list[dict]:
+    """Fetch, enrich, and chronologically sort all comments for a work item.
+
+    Single source of truth shared by `comment ls` and `wi show`. Resolves the
+    actor UUID to a display name via the (already 1h-cached) members list.
+
+    Always raises on failure — callers own the failure policy.
+    """
+    from planecli.cache import cached_list_comments, cached_list_members
+
+    comments = await cached_list_comments(workspace, project_id, item_id)
+    members = await cached_list_members(workspace)
+    members_map = {
+        m["id"]: (m.get("display_name") or m.get("first_name") or "")
+        for m in members
+        if m.get("id")
+    }
+    enriched = [_enrich_comment(c, members_map) for c in comments]
+    enriched.sort(key=lambda c: c.get("created_at") or "")
+    return enriched
+
+
 @comment_app.command(name="list", alias="ls")
 async def list_(
     issue: str,
