@@ -447,6 +447,7 @@ tests/
 - [Caching](docs/caching.md) — TTLs, cache keys, and invalidation
 - [Architecture Decision Records](docs/adr/) — Why the CLI is built the way it is
 - [AGENTS.md](AGENTS.md) — Conventions and gotchas for contributors and AI coding agents
+- [AI Agent Skill](skills/SKILL.md) — A portable skill that teaches AI coding agents (Claude Code, Codex, opencode, …) how to drive `planecli`
 
 ## Notes
 
