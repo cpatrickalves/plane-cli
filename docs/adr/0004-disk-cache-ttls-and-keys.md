@@ -30,10 +30,11 @@ Implemented in `cache.py` with [cashews](https://github.com/Krukov/cashews) over
 | `TTL_MODERATE` | 5m | projects, modules, cycles |
 | `TTL_CONFIG` | 10m | states, labels, estimate points |
 | `TTL_WORK_ITEMS` | 2m | work items |
+| `TTL_COMMENTS` | 1m | a work item's comments (scoped per item) |
 
-Work items get the shortest TTL because they change most; a 2-minute window still collapses repeated `wi list` runs. Comments, documents, and single-resource lookups by UUID/identifier are **not** cached — they must always be fresh.
+Comments get the shortest TTL because they are the most volatile; work items follow at 2m. A short window still collapses repeated reads of the same list (`wi list`) or item (`wi show`, `comment ls`). Documents and single-resource lookups by UUID/identifier are **not** cached — they must always be fresh.
 
-**Keys are scoped by a hash of `base_url`** so two Plane instances never collide. The key format is `{sha256(base_url)[:12]}:{resource}:{workspace}[:{project_id}]`.
+**Keys are scoped by a hash of `base_url`** so two Plane instances never collide. The key format is `{sha256(base_url)[:12]}:{resource}:{workspace}[:{project_id}[:{item_id}]]`. The optional `item_id` level was added so per-item resources (comments) cache independently of one another; only comments use it today.
 
 **Invalidation** is explicit after writes: every create/update/delete calls `invalidate_resource("<resource>", workspace, project_id)`; `configure` clears the whole cache because credentials (and thus the instance) may have changed. `--no-cache` (or `PLANECLI_NO_CACHE=1`) skips reads but still writes, so the next run is warm.
 

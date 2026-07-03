@@ -272,7 +272,9 @@ planecli comment delete COMMENT_ID --issue ISSUE [--project/-p PROJECT]
 ```
 
 `--limit` (default 50) selects the **most recent** N comments, still rendered
-oldest → newest — not the first N chronologically.
+oldest → newest — not the first N chronologically. A limit of `0` or a negative
+value returns no comments (consistent with the `[:limit]` semantics used elsewhere,
+where `0` means "none").
 
 ## Users
 

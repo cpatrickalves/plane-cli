@@ -74,8 +74,9 @@ planecli wi ls -p "Frontend" --labels "bug,critical"
 # Sort and limit results
 planecli wi ls -p "Frontend" --sort updated --limit 10
 
-# Show a specific work item (by identifier or name)
+# Show a specific work item (by identifier or name); also bundles its comments
 planecli wi show ABC-123
+planecli wi show ABC-123 --no-comments   # skip the comment fetch
 
 # Create a work item
 planecli wi create "Fix login timeout" -p "Frontend" --assign me --priority urgent
