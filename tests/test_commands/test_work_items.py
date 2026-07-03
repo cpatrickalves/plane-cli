@@ -4,8 +4,16 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+from plane.errors import HttpError
+
 from planecli.commands.work_items import WI_COLUMNS, WI_FIELDS, create, list_, update
 from planecli.commands.work_items import _enrich_work_item
+
+
+def _make_http_error(status_code: int, message: str = "") -> HttpError:
+    """Build an SDK HttpError the way _fetch_project_data would surface one."""
+    return HttpError(message or f"HTTP {status_code}", status_code=status_code)
 
 
 def _make_member_dict(member_id: str, first_name: str, last_name: str, display_name: str):
@@ -918,6 +926,101 @@ class TestWiList:
 
         data = mock_output.call_args[0][0]
         assert len(data) == 0
+
+    @patch("planecli.commands.work_items.output")
+    @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
+    @patch("planecli.commands.work_items.get_client")
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.commands.work_items.resolve_project_async")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_labels", new_callable=AsyncMock)
+    async def test_list_single_project_propagates_error(
+        self,
+        mock_cached_labels,
+        mock_cached_states,
+        mock_cached_members,
+        mock_cached_work_items,
+        mock_resolve_project,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_output,
+    ):
+        """wi ls -p X must raise on API failure, not silently return an empty list."""
+        mock_get_client.return_value = MagicMock()
+        mock_create_client.return_value = MagicMock()
+        mock_cached_members.return_value = []
+        mock_resolve_project.return_value = _make_project_dict("proj-1", "FE", "Frontend")
+
+        # The project's data fetch fails (e.g. auth/network error surfaced by the SDK).
+        mock_cached_work_items.side_effect = _make_http_error(401, "unauthorized")
+        mock_cached_states.return_value = []
+        mock_cached_labels.return_value = []
+
+        # PlaneError is converted to a PlaneCLIError with the right exit code; the old
+        # behaviour swallowed it and returned [] (exit 0), masking the failure.
+        from planecli.exceptions import AuthenticationError
+
+        with pytest.raises(AuthenticationError):
+            await list_(project="Frontend")
+
+        mock_output.assert_not_called()
+
+    @patch("planecli.formatters.console")
+    @patch("planecli.commands.work_items.output")
+    @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
+    @patch("planecli.commands.work_items.get_client")
+    @patch("planecli.commands.work_items.create_client")
+    @patch("planecli.cache.cached_list_work_items", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_projects", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_states", new_callable=AsyncMock)
+    @patch("planecli.cache.cached_list_labels", new_callable=AsyncMock)
+    async def test_list_all_projects_warns_and_continues_on_error(
+        self,
+        mock_cached_labels,
+        mock_cached_states,
+        mock_cached_projects,
+        mock_cached_members,
+        mock_cached_work_items,
+        mock_create_client,
+        mock_get_client,
+        mock_get_ws,
+        mock_output,
+        mock_console,
+    ):
+        """wi ls (multi-project) warns on a failing project but keeps the others."""
+        mock_get_client.return_value = MagicMock()
+        mock_create_client.return_value = MagicMock()
+        mock_cached_members.return_value = []
+
+        mock_cached_projects.return_value = [
+            _make_project_dict("proj-1", "FE", "Frontend"),
+            _make_project_dict("proj-2", "BE", "Backend"),
+        ]
+
+        def _wi_side_effect(workspace, project_id):
+            if project_id == "proj-1":
+                raise _make_http_error(500, "boom")
+            return [_make_work_item_dict("wi-2", "BE task", 5)]
+
+        mock_cached_work_items.side_effect = _wi_side_effect
+        mock_cached_states.return_value = []
+        mock_cached_labels.return_value = []
+
+        await list_()
+
+        # Backend items still shown; Frontend surfaced as a warning, not a hard failure.
+        data = mock_output.call_args[0][0]
+        assert len(data) == 1
+        assert data[0]["project_identifier"] == "BE"
+
+        mock_console.print.assert_called_once()
+        warning = mock_console.print.call_args[0][0]
+        assert "Warning: Failed to fetch" in warning
+        assert "FE" in warning
 
 
 class TestWiCreate:

@@ -52,14 +52,15 @@ def _fetch_page(list_fn: Any, *args: Any, **kwargs: Any) -> Any:
     return list_fn(*args, **kwargs)
 
 
-def _paginate_all(list_fn, *args, **kwargs) -> list[Any]:
+def _paginate_all(list_fn, *args, query_params_cls: type[Any] | None = None, **kwargs) -> list[Any]:
     """Fetch all pages from a paginated SDK method."""
     from plane.models.query_params import PaginatedQueryParams
 
+    params_cls = query_params_cls or PaginatedQueryParams
     all_results = []
     cursor = None
     while True:
-        params = PaginatedQueryParams(per_page=100, cursor=cursor)
+        params = params_cls(per_page=100, cursor=cursor)
         response = _fetch_page(list_fn, *args, params=params, **kwargs)
         all_results.extend(response.results)
         logger.debug("Fetched page with {} results (cursor: {})", len(response.results), cursor)
@@ -138,7 +139,14 @@ def resolve_work_item(
             raise ResourceNotFoundError("Work item", query)
 
     # Fuzzy name match - fetch all work items in project
-    items = _paginate_all(client.work_items.list, workspace, project_id)
+    from plane.models.query_params import WorkItemQueryParams
+
+    items = _paginate_all(
+        client.work_items.list,
+        workspace,
+        project_id,
+        query_params_cls=WorkItemQueryParams,
+    )
 
     match = find_best_match(query, items, key=lambda i: i.name or "")
     if match:
@@ -371,6 +379,8 @@ async def resolve_work_item_async(
     query: str, client: PlaneClient, workspace: str, project_id: str
 ) -> dict[str, Any]:
     """Async version of resolve_work_item."""
+    from plane.models.query_params import WorkItemQueryParams
+
     from planecli.api.async_sdk import paginate_all_async, run_sdk
 
     # NOTE: Use raw _get() to bypass WorkItemDetail Pydantic validation which
@@ -398,7 +408,12 @@ async def resolve_work_item_async(
             _reraise_if_retryable(e)
             raise ResourceNotFoundError("Work item", query)
 
-    items = await paginate_all_async(client.work_items.list, workspace, project_id)
+    items = await paginate_all_async(
+        client.work_items.list,
+        workspace,
+        project_id,
+        query_params_cls=WorkItemQueryParams,
+    )
 
     match = find_best_match(query, items, key=lambda i: i.name or "")
     if match:
@@ -588,7 +603,11 @@ async def resolve_estimate_point_async(
             return pt
 
     available = sorted(pt.get("value", "?") for pt in points)
-    hint = f"Available values: {', '.join(available)}" if available else "No estimate points configured"
+    hint = (
+        f"Available values: {', '.join(available)}"
+        if available
+        else "No estimate points configured"
+    )
     raise ResourceNotFoundError("Estimate point", f"{value} ({hint})")
 
 

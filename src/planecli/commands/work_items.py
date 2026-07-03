@@ -278,12 +278,9 @@ async def list_(
                 project_id = proj_dict["id"]
                 proj_identifier = proj_dict.get("identifier", "")
 
-                try:
-                    items, states, labels_list = await _fetch_project_data(
-                        proj_client, workspace, project_id
-                    )
-                except Exception:
-                    return []
+                items, states, labels_list = await _fetch_project_data(
+                    proj_client, workspace, project_id
+                )
 
                 if not items:
                     return []
@@ -325,6 +322,8 @@ async def list_(
 
             for proj_dict, result in zip(projects_to_list, results):
                 if isinstance(result, Exception):
+                    if project:
+                        raise result
                     console.print(
                         f"[yellow]Warning: Failed to fetch "
                         f"{proj_dict.get('identifier', proj_dict['id'])}: {result}[/]"

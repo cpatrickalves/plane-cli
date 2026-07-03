@@ -208,13 +208,20 @@ async def cached_list_work_items(workspace: str, project_id: str) -> list[dict[s
     Work items change more frequently than states/labels, but caching for 2min
     avoids repeated API calls when running wi ls multiple times in sequence.
     """
+    from plane.models.query_params import WorkItemQueryParams
+
     from planecli.api.async_sdk import create_client, paginate_all_async
 
     key = _cache_key("work_items", workspace, project_id)
 
     async def _fetch() -> list[Any]:
         client = create_client()
-        return await paginate_all_async(client.work_items.list, workspace, project_id)
+        return await paginate_all_async(
+            client.work_items.list,
+            workspace,
+            project_id,
+            query_params_cls=WorkItemQueryParams,
+        )
 
     return await _cached_list(key, TTL_WORK_ITEMS, _fetch)
 
