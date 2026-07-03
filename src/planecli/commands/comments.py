@@ -164,6 +164,8 @@ async def create(
             workspace, project_id, item_id, comment_data,
         )
         data = _enrich_comment(comment.model_dump())
+        from planecli.cache import invalidate_resource
+        await invalidate_resource("comments", workspace, project_id, item_id)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -220,6 +222,8 @@ async def update(
             workspace, project_id, item_id, comment_id, update_data,
         )
         data = _enrich_comment(comment.model_dump())
+        from planecli.cache import invalidate_resource
+        await invalidate_resource("comments", workspace, project_id, item_id)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -269,6 +273,8 @@ async def delete(
             client.work_items.comments.delete,
             workspace, project_id, item_id, comment_id,
         )
+        from planecli.cache import invalidate_resource
+        await invalidate_resource("comments", workspace, project_id, item_id)
     except PlaneError as e:
         raise handle_api_error(e)
 

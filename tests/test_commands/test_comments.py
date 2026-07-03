@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from plane.errors import PlaneError
@@ -132,3 +132,69 @@ async def test_comment_ls_hard_fails_on_plane_error(
     with pytest.raises(PlaneCLIError):
         await list_("ABC-1", limit=50)
     mock_output.assert_not_called()
+
+
+@patch("planecli.cache.invalidate_resource", new_callable=AsyncMock)
+@patch("planecli.commands.comments.run_sdk", new_callable=AsyncMock)
+@patch(
+    "planecli.commands.comments.resolve_work_item_across_projects_async",
+    new_callable=AsyncMock,
+)
+@patch("planecli.commands.comments.get_workspace", return_value="ws")
+@patch("planecli.commands.comments.get_client")
+async def test_comment_create_invalidates_cache(
+    mock_client, mock_ws, mock_resolve, mock_run_sdk, mock_invalidate
+):
+    from planecli.commands.comments import create
+
+    mock_resolve.return_value = ({"id": "item-1"}, "p1")
+    mock_run_sdk.return_value = MagicMock(
+        model_dump=lambda: {"id": "c1", "comment_html": "<p>x</p>", "actor": "u1"}
+    )
+
+    await create("ABC-1", body="hello")
+
+    mock_invalidate.assert_awaited_once_with("comments", "ws", "p1", "item-1")
+
+
+@patch("planecli.cache.invalidate_resource", new_callable=AsyncMock)
+@patch("planecli.commands.comments.run_sdk", new_callable=AsyncMock)
+@patch(
+    "planecli.commands.comments.resolve_work_item_across_projects_async",
+    new_callable=AsyncMock,
+)
+@patch("planecli.commands.comments.get_workspace", return_value="ws")
+@patch("planecli.commands.comments.get_client")
+async def test_comment_update_invalidates_cache(
+    mock_client, mock_ws, mock_resolve, mock_run_sdk, mock_invalidate
+):
+    from planecli.commands.comments import update
+
+    mock_resolve.return_value = ({"id": "item-1"}, "p1")
+    mock_run_sdk.return_value = MagicMock(
+        model_dump=lambda: {"id": "c1", "comment_html": "<p>x</p>", "actor": "u1"}
+    )
+
+    await update("comment-1", issue="ABC-1", body="edited")
+
+    mock_invalidate.assert_awaited_once_with("comments", "ws", "p1", "item-1")
+
+
+@patch("planecli.cache.invalidate_resource", new_callable=AsyncMock)
+@patch("planecli.commands.comments.run_sdk", new_callable=AsyncMock)
+@patch(
+    "planecli.commands.comments.resolve_work_item_across_projects_async",
+    new_callable=AsyncMock,
+)
+@patch("planecli.commands.comments.get_workspace", return_value="ws")
+@patch("planecli.commands.comments.get_client")
+async def test_comment_delete_invalidates_cache(
+    mock_client, mock_ws, mock_resolve, mock_run_sdk, mock_invalidate
+):
+    from planecli.commands.comments import delete
+
+    mock_resolve.return_value = ({"id": "item-1"}, "p1")
+
+    await delete("comment-1", issue="ABC-1")
+
+    mock_invalidate.assert_awaited_once_with("comments", "ws", "p1", "item-1")
