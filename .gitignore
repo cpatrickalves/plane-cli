@@ -177,3 +177,7 @@ pyrightconfig.json
 .claude/
 CLAUDE.md
 plans/
+docs/superpowers/specs
+
+# Git worktrees (local scratch, never committed)
+.worktrees/
