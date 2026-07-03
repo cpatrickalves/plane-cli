@@ -85,6 +85,28 @@ async def test_fetch_issue_comments_raises_on_failure(mock_comments, mock_member
         await fetch_issue_comments("ws", "p1", "item-1")
 
 
+@patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
+@patch("planecli.cache.cached_list_comments", new_callable=AsyncMock)
+async def test_fetch_issue_comments_degrades_when_members_fail(
+    mock_comments, mock_members
+):
+    """A members-list failure is a secondary-enrichment concern: it must not
+    take down comments that already loaded successfully (names fall back to
+    the raw actor UUID, same as the no-map case)."""
+    from planecli.commands.comments import fetch_issue_comments
+
+    mock_members.side_effect = PlaneError("members unavailable")
+    mock_comments.return_value = [
+        {"id": "c1", "actor": "u1", "comment_html": "<p>hi</p>",
+         "created_at": "2026-02-10T10:00:00Z"},
+    ]
+
+    result = await fetch_issue_comments("ws", "p1", "item-1")
+
+    assert len(result) == 1
+    assert result[0]["actor_name"] == "u1"  # fell back to raw UUID
+
+
 @patch("planecli.commands.comments.output")
 @patch("planecli.commands.comments.fetch_issue_comments", new_callable=AsyncMock)
 @patch(

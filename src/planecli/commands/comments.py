@@ -10,6 +10,7 @@ from plane.errors import PlaneError
 
 from planecli.api.async_sdk import run_sdk
 from planecli.api.client import get_client, get_workspace, handle_api_error
+from planecli.exceptions import PlaneCLIError
 from planecli.formatters import output, output_single
 from planecli.utils.resolve import (
     resolve_work_item_across_projects_async,
@@ -67,7 +68,14 @@ async def fetch_issue_comments(
     from planecli.cache import cached_list_comments, cached_list_members
 
     comments = await cached_list_comments(workspace, project_id, item_id)
-    members = await cached_list_members(workspace)
+    # Author-name resolution is a nicety, not the point of this call: if the
+    # members list fails to load, fall back to an empty map (actor_name then
+    # falls back to the raw UUID, per _enrich_comment) instead of losing the
+    # comments themselves.
+    try:
+        members = await cached_list_members(workspace)
+    except (PlaneError, PlaneCLIError):
+        members = []
     members_map = {
         m["id"]: (m.get("display_name") or m.get("first_name") or "")
         for m in members
