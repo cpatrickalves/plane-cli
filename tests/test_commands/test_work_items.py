@@ -1304,3 +1304,88 @@ class TestWiShow:
         mock_fetch.assert_not_awaited()
         data = mock_out.call_args[0][0]
         assert "comments" not in data
+
+    @patch("planecli.commands.work_items.output")
+    @patch("planecli.commands.work_items.output_single")
+    @patch("planecli.commands.comments.fetch_issue_comments", new_callable=AsyncMock)
+    @patch("planecli.commands.work_items.run_sdk", new_callable=AsyncMock)
+    @patch(
+        "planecli.commands.work_items.resolve_work_item_across_projects_async",
+        new_callable=AsyncMock,
+    )
+    @patch("planecli.commands.work_items.get_workspace", return_value="ws")
+    @patch("planecli.commands.work_items.get_client")
+    async def test_show_renders_comments_section(
+        self, mock_client, mock_ws, mock_resolve, mock_run_sdk, mock_fetch,
+        mock_out_single, mock_output,
+    ):
+        from planecli.commands.comments import COMMENT_COLUMNS
+        from planecli.commands.work_items import show
+
+        mock_resolve.return_value = (self._resolved_item(), "p1")
+        mock_run_sdk.return_value = {"estimate_point": None}
+        comments = [
+            {"id": "c1", "actor_name": "Alice", "body_text": "hi", "created_at": "t1"}
+        ]
+        mock_fetch.return_value = comments
+
+        await show("ABC-7")  # human mode (json=False)
+
+        mock_output.assert_called_once()
+        args, kwargs = mock_output.call_args
+        assert args[0] == comments
+        assert args[1] == COMMENT_COLUMNS
+        assert kwargs.get("title") == "Comments"
+
+    @patch("planecli.formatters.console")
+    @patch("planecli.commands.work_items.output")
+    @patch("planecli.commands.work_items.output_single")
+    @patch("planecli.commands.comments.fetch_issue_comments", new_callable=AsyncMock)
+    @patch("planecli.commands.work_items.run_sdk", new_callable=AsyncMock)
+    @patch(
+        "planecli.commands.work_items.resolve_work_item_across_projects_async",
+        new_callable=AsyncMock,
+    )
+    @patch("planecli.commands.work_items.get_workspace", return_value="ws")
+    @patch("planecli.commands.work_items.get_client")
+    async def test_show_renders_none_when_empty(
+        self, mock_client, mock_ws, mock_resolve, mock_run_sdk, mock_fetch,
+        mock_out_single, mock_output, mock_console,
+    ):
+        from planecli.commands.work_items import show
+
+        mock_resolve.return_value = (self._resolved_item(), "p1")
+        mock_run_sdk.return_value = {"estimate_point": None}
+        mock_fetch.return_value = []
+
+        await show("ABC-7")  # human mode
+
+        mock_output.assert_not_called()  # no table for zero comments
+        printed = " ".join(str(c.args[0]) for c in mock_console.print.call_args_list)
+        assert "(none)" in printed
+
+    @patch("planecli.formatters.console")
+    @patch("planecli.commands.work_items.output")
+    @patch("planecli.commands.work_items.output_single")
+    @patch("planecli.commands.comments.fetch_issue_comments", new_callable=AsyncMock)
+    @patch("planecli.commands.work_items.run_sdk", new_callable=AsyncMock)
+    @patch(
+        "planecli.commands.work_items.resolve_work_item_across_projects_async",
+        new_callable=AsyncMock,
+    )
+    @patch("planecli.commands.work_items.get_workspace", return_value="ws")
+    @patch("planecli.commands.work_items.get_client")
+    async def test_show_renders_failed_to_load(
+        self, mock_client, mock_ws, mock_resolve, mock_run_sdk, mock_fetch,
+        mock_out_single, mock_output, mock_console,
+    ):
+        from planecli.commands.work_items import show
+
+        mock_resolve.return_value = (self._resolved_item(), "p1")
+        mock_run_sdk.return_value = {"estimate_point": None}
+        mock_fetch.side_effect = _make_http_error(503, "unavailable")
+
+        await show("ABC-7")  # human mode, degrades
+
+        printed = " ".join(str(c.args[0]) for c in mock_console.print.call_args_list)
+        assert "failed to load" in printed

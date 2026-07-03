@@ -462,6 +462,19 @@ async def show(
 
     output_single(data, WI_FIELDS, title="Work Item Details", as_json=json)
 
+    # Human-readable Comments section (non-JSON only, so stdout stays clean under --json).
+    if not json and not no_comments:
+        from planecli.commands.comments import COMMENT_COLUMNS
+        from planecli.formatters import console
+
+        comments = data.get("comments")
+        if comments:
+            output(comments, COMMENT_COLUMNS, title="Comments")
+        elif comments == []:
+            console.print("Comments: (none)")
+        else:  # None -> fetch failed
+            console.print("Comments: (failed to load)")
+
 
 @wi_app.command(alias="new")
 async def create(
