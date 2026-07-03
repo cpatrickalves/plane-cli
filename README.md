@@ -54,6 +54,21 @@ planecli wi ls -p "Frontend"
 planecli wi create "Fix login bug" -p "Frontend" --assign me --priority urgent
 ```
 
+### Updating
+
+The CLI is installed as an editable [uv tool](https://docs.astral.sh/uv/concepts/tools/), so pulling the latest commits is enough for code changes to take effect:
+
+```bash
+cd plane-cli
+git pull
+```
+
+After a version bump or a new dependency, refresh the tool install to update its metadata and environment:
+
+```bash
+uv tool install --force -e .
+```
+
 ## Command Reference
 
 > If you installed with `uv sync` instead of `uv tool install`, prefix all commands with `uv run`.
