@@ -1389,3 +1389,32 @@ class TestWiShow:
 
         printed = " ".join(str(c.args[0]) for c in mock_console.print.call_args_list)
         assert "failed to load" in printed
+
+    @patch("planecli.formatters.console")
+    @patch("planecli.commands.work_items.output")
+    @patch("planecli.commands.work_items.output_single")
+    @patch("planecli.commands.comments.fetch_issue_comments", new_callable=AsyncMock)
+    @patch("planecli.commands.work_items.run_sdk", new_callable=AsyncMock)
+    @patch(
+        "planecli.commands.work_items.resolve_work_item_across_projects_async",
+        new_callable=AsyncMock,
+    )
+    @patch("planecli.commands.work_items.get_workspace", return_value="ws")
+    @patch("planecli.commands.work_items.get_client")
+    async def test_show_no_false_failure_when_fetch_not_attempted(
+        self, mock_client, mock_ws, mock_resolve, mock_run_sdk, mock_fetch,
+        mock_out_single, mock_output, mock_console,
+    ):
+        """Missing id/project skips the fetch; the human view must not claim
+        it "failed to load" (a false failure signal) — it just says nothing."""
+        from planecli.commands.work_items import show
+
+        # No "id"/"project" -> the estimate re-fetch and comment fetch guards
+        # both short-circuit, so data["comments"] is never set.
+        mock_resolve.return_value = ({"name": "Fix bug"}, "p1")
+
+        await show("ABC-7")  # human mode
+
+        mock_fetch.assert_not_awaited()
+        printed = " ".join(str(c.args[0]) for c in mock_console.print.call_args_list)
+        assert "failed to load" not in printed

@@ -463,7 +463,9 @@ async def show(
     output_single(data, WI_FIELDS, title="Work Item Details", as_json=json)
 
     # Human-readable Comments section (non-JSON only, so stdout stays clean under --json).
-    if not json and not no_comments:
+    # Gated on the same id/project check as the fetch above, so we only ever
+    # render "(failed to load)" when a fetch was actually attempted and failed.
+    if not json and not no_comments and data.get("id") and data.get("project"):
         from planecli.commands.comments import COMMENT_COLUMNS
         from planecli.formatters import console
 
