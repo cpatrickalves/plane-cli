@@ -29,14 +29,19 @@ COMMENT_COLUMNS = [
 ]
 
 
-def _enrich_comment(data: dict) -> dict:
-    """Add convenience fields to a comment dict."""
-    # Extract actor name
+def _enrich_comment(data: dict, members_map: dict[str, str] | None = None) -> dict:
+    """Add convenience fields to a comment dict.
+
+    members_map: optional {member_id: display_name} used to resolve the actor
+    UUID to a human name. Without it (or on a miss), actor_name falls back to
+    the raw UUID — the public comment API returns no actor_detail.
+    """
     actor = data.get("actor_detail") or data.get("actor") or {}
     if isinstance(actor, dict):
         data["actor_name"] = actor.get("display_name") or actor.get("first_name", "")
     else:
-        data["actor_name"] = str(actor) if actor else ""
+        resolved = members_map.get(actor) if members_map else None
+        data["actor_name"] = resolved or (str(actor) if actor else "")
 
     # Strip HTML from comment body
     body_html = data.get("comment_html") or ""
