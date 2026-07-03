@@ -342,7 +342,7 @@ export PLANECLI_NO_CACHE=1
 planecli cache clear
 ```
 
-For details on TTLs, cache keys, and invalidation, see [docs/03-caching.md](docs/03-caching.md).
+For details on TTLs, cache keys, and invalidation, see [docs/caching.md](docs/caching.md).
 
 ## Development
 
@@ -441,9 +441,16 @@ tests/
 | JSON output doesn't appear with table | Table goes to stderr, JSON to stdout — use `2>/dev/null` to suppress the table |
 | Stale or incorrect data | Run `planecli cache clear` to reset the cache |
 
+## Documentation
+
+- [Architecture](docs/architecture.md) — System overview, layers, and request flow
+- [Caching](docs/caching.md) — TTLs, cache keys, and invalidation
+- [Architecture Decision Records](docs/adr/) — Why the CLI is built the way it is
+- [AGENTS.md](AGENTS.md) — Conventions and gotchas for contributors and AI coding agents
+
 ## Notes
 
-- The project is in **Alpha** (v0.1.0) — the command interface may change
+- The project is in **Alpha** (v0.5.1) — the command interface may change
 - The Documents (Pages) API in the Plane SDK has limited support; list, update, and delete use direct HTTP requests as a workaround
 - Compatible with Plane.so SaaS and self-hosted instances
 - The `~/.plane_api` file is saved with restricted permissions (`0600`)

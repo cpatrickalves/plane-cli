@@ -115,7 +115,7 @@ def resolve_work_item(
     # Try UUID direct lookup
     # NOTE: Use raw _get() to bypass WorkItemDetail Pydantic validation which
     # fails because the API returns assignees/labels as UUID strings, not objects.
-    # See: https://github.com/makeplane/plane-python-sdk/issues/XXX
+    # See docs/adr/0003-sdk-escape-hatches.md for the full rationale.
     if _is_uuid(query):
         try:
             return client.work_items._get(

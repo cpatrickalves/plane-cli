@@ -30,23 +30,27 @@ Only **slowly-changing resource definitions** are cached. Data that changes freq
 
 | Resource | TTL | What It Is | Used For |
 |----------|-----|------------|----------|
+| Current user (`me`) | 1 hour | The authenticated user's profile | Resolving `--assign me`, `whoami` |
 | Workspace members | 1 hour | The list of users in the workspace | Resolving `--assignee` flags, displaying assignee names |
 | Project list | 5 min | All projects in the workspace | Resolving `--project` flags, `wi list` across all projects |
-| States | 10 min | State definitions per project (e.g., Todo, In Progress, Done) | Resolving `--state` flags, displaying state names/colors |
-| Labels | 10 min | Label definitions per project | Resolving `--labels` flags, displaying label names/colors |
 | Modules | 5 min | Module list per project | Resolving `--module` flags |
 | Cycles | 5 min | Cycle list per project | Resolving cycle names |
+| States | 10 min | State definitions per project (e.g., Todo, In Progress, Done) | Resolving `--state` flags, displaying state names/colors |
+| Labels | 10 min | Label definitions per project | Resolving `--labels` flags, displaying label names/colors |
+| Estimate points | 10 min | The `{id, value}` pairs used for effort estimates | Resolving `--estimate` flags (derived from work items — see [ADR-0003](adr/0003-sdk-escape-hatches.md)) |
+| Work items | **2 min** | The work-item list per project | `wi list` and fuzzy name resolution |
+
+The TTLs follow a **volatility gradient** — the more often a resource changes, the shorter its lifetime. Work items get the shortest TTL (2 min) because they change frequently, but a short window still eliminates repeated calls when running `wi list` several times in a row. The rationale for these tiers is recorded in [ADR-0004](adr/0004-disk-cache-ttls-and-keys.md).
 
 ### NOT Cached
 
 | Resource | Reason |
 |----------|--------|
-| Work items | Change frequently; stale data would be confusing |
 | Comments | Change frequently |
 | Documents / Pages | Change frequently |
 | Individual resource lookups (by UUID/identifier) | Single-resource fetches should always be fresh |
 
-**Important distinction**: The *state assigned to a work item* is always fresh (work items are never cached). What's cached is the *list of state definitions* — the lookup table that maps state UUIDs to display names and colors.
+**Important distinction**: What's cached is the *list of state definitions* — the lookup table that maps state UUIDs to display names and colors — not the association between a work item and its state. A work item's own fields are only ever as stale as its 2-minute TTL.
 
 ## Cache Keys
 

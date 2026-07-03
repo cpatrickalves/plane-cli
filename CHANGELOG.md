@@ -2,10 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.5.1] - 2026-07-03
+
+<!-- The 0.4.x/0.5.0 tags were not documented separately; the user-facing
+     changes released after 0.3.0 are consolidated in this entry. -->
 
 ### Added
+- `--parent` filter in `wi list` to list the child work items of a parent, referenced by identifier (`ABC-123`), UUID, or name
 - `--status` option in the `module create` and `module update` commands (values: `backlog`, `planned`, `in-progress`, `paused`, `completed`, `cancelled`), with English and Portuguese aliases (e.g., `em andamento`, `concluído`, `cancelado`) and validation with a clear error message
+
+### Documentation
+- Added the `docs/adr/` Architecture Decision Records, `docs/architecture.md`, and root `AGENTS.md`
+- Renamed `docs/03-caching.md` to `docs/caching.md` and corrected the cached-resource reference
 
 ## [0.3.0] - 2026-02-12
 
