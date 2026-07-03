@@ -134,6 +134,36 @@ async def test_comment_ls_tail_slices_most_recent(
     assert [c["id"] for c in data] == ["c2", "c3"]  # most recent 2, still chronological
 
 
+@pytest.mark.parametrize("limit", [0, -2])
+@patch("planecli.commands.comments.output")
+@patch("planecli.commands.comments.fetch_issue_comments", new_callable=AsyncMock)
+@patch(
+    "planecli.commands.comments.resolve_work_item_across_projects_async",
+    new_callable=AsyncMock,
+)
+@patch("planecli.commands.comments.get_workspace", return_value="ws")
+@patch("planecli.commands.comments.get_client")
+async def test_comment_ls_non_positive_limit_returns_none(
+    mock_client, mock_ws, mock_resolve, mock_fetch, mock_output, limit
+):
+    """--limit 0 or negative means "no results", matching `wi ls`'s
+    `data[:limit]` semantics (where limit=0 also yields an empty list) —
+    not "all comments" (0 is falsy) and not a nonsensical reversed slice."""
+    from planecli.commands.comments import list_
+
+    mock_resolve.return_value = ({"id": "item-1"}, "p1")
+    mock_fetch.return_value = [
+        {"id": "c1", "created_at": "t1"},
+        {"id": "c2", "created_at": "t2"},
+        {"id": "c3", "created_at": "t3"},
+    ]
+
+    await list_("ABC-1", limit=limit)
+
+    data = mock_output.call_args[0][0]
+    assert data == []
+
+
 @patch("planecli.commands.comments.output")
 @patch("planecli.commands.comments.fetch_issue_comments", new_callable=AsyncMock)
 @patch(

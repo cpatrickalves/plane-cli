@@ -125,7 +125,10 @@ async def list_(
         raise handle_api_error(e)
 
     # --limit selects the most recent N, still rendered oldest -> newest.
-    data = comments[-limit:] if limit else comments
+    # Non-positive limits mean "no results" (consistent with `wi ls`'s
+    # `data[:limit]`, where limit=0 already yields an empty list).
+    n = max(limit, 0)
+    data = comments[-n:] if n else []
     output(data, COMMENT_COLUMNS, title=f"Comments on {issue}", as_json=json)
 
 
