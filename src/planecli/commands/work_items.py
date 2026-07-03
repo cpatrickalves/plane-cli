@@ -7,6 +7,7 @@ from typing import Annotated
 
 import cyclopts
 from cyclopts import Parameter
+from loguru import logger
 from plane.errors import PlaneError
 from rich.text import Text
 
@@ -407,6 +408,7 @@ async def show(
     *,
     project: Annotated[str | None, Parameter(alias="-p")] = None,
     json: bool = False,
+    no_comments: bool = False,
 ) -> None:
     """Show work item details.
 
@@ -416,6 +418,8 @@ async def show(
         Work item identifier (ABC-123), UUID, or name.
     project
         Project name/ID (required for name-based lookup).
+    no_comments
+        Skip fetching the work item's comments.
     """
     try:
         client = get_client()
@@ -441,7 +445,37 @@ async def show(
         raise handle_api_error(e)
 
     data = _enrich_work_item(data)
+
+    # Comments are a SECONDARY enrichment: fetched in their own block OUTSIDE the
+    # resolve/estimate try above, so a comment API failure degrades to null
+    # (ADR-0006) instead of hitting the outer handler and aborting the command.
+    if not no_comments and data.get("id") and data.get("project"):
+        from planecli.commands.comments import fetch_issue_comments
+        from planecli.exceptions import PlaneCLIError
+        try:
+            data["comments"] = await fetch_issue_comments(
+                workspace, data["project"], data["id"]
+            )
+        except (PlaneError, PlaneCLIError) as exc:
+            logger.warning("Failed to fetch comments: {}", exc)
+            data["comments"] = None  # signal failure, do NOT abort
+
     output_single(data, WI_FIELDS, title="Work Item Details", as_json=json)
+
+    # Human-readable Comments section (non-JSON only, so stdout stays clean under --json).
+    # Gated on the same id/project check as the fetch above, so we only ever
+    # render "(failed to load)" when a fetch was actually attempted and failed.
+    if not json and not no_comments and data.get("id") and data.get("project"):
+        from planecli.commands.comments import COMMENT_COLUMNS
+        from planecli.formatters import console
+
+        comments = data.get("comments")
+        if comments:
+            output(comments, COMMENT_COLUMNS, title="Comments")
+        elif comments == []:
+            console.print("Comments: (none)")
+        else:  # None -> fetch failed
+            console.print("Comments: (failed to load)")
 
 
 @wi_app.command(alias="new")

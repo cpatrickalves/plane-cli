@@ -4,7 +4,7 @@ description: "Manage Plane.so project management via the planecli CLI — list, 
 allowed-tools: Bash(planecli *)
 metadata:
   author: Patrick Alves
-  version: "1.2"
+  version: "1.3"
 ---
 
 # PlaneCLI
@@ -50,7 +50,8 @@ planecli wi update ABC-123 --state "Done" --priority none --json
 planecli wi update ABC-123 --assign "Patrick" --labels "bug,urgent" --json
 
 # Other
-planecli wi show ABC-123 --json
+planecli wi show ABC-123 --json                     # Bundles comments (comments: [...] / [] / null)
+planecli wi show ABC-123 --no-comments --json        # Skip the comment fetch
 planecli wi assign ABC-123 --json                   # Assign to yourself
 planecli wi assign ABC-123 --assign "Name" --json   # Assign to someone
 planecli wi search "login bug" -p "Project" --json
@@ -127,6 +128,7 @@ planecli comment create ABC-123 --body "Fixed in PR #456" --json
 
 - **Descriptions accept markdown.** The `-d` / `--description` flag (on `wi create` and `wi update`) is documented as "plain text", but Plane renders markdown — headers, `code fences`, lists, tables. For long or multiline bodies with code, write the content to a file and pass it with command substitution: `-d "$(cat body.md)"`. Building a huge inline string is error-prone; a file is more reliable. After a bulk create, verify one item with `wi show <ID> --json` to confirm the body rendered before creating the rest.
 - **`sequence_id` shape differs between commands.** `wi show`/`wi create` return it as an integer (`204`); `wi ls` returns it already prefixed as a string (`"PIPERAG-204"`). Don't re-prefix the list value (you'd get `PIPERAG-PIPERAG-204`). To build an identifier, use `sequence_id` directly from `wi ls`, or `"{project_identifier}-{sequence_id}"` from `wi show`.
+- **`wi show` bundles comments, and can degrade to `comments: null`.** `comments` is `[]` when there are none, a list when there are, or `null` if the comment fetch failed — the work item itself still returns and the command still exits 0 (a comment fetch failure never fails `wi show`). Check for `null` explicitly if your script needs to distinguish "no comments" from "couldn't load comments". Pass `--no-comments` to skip the fetch (then the `comments` key is absent from JSON entirely).
 
 ## Common Patterns
 

@@ -35,6 +35,7 @@ Its plain-text form (HTML stripped) is the `body_text`.
 
 **Author**:
 The workspace member who wrote a comment. The API returns this as `actor` (a bare member UUID);
-the CLI resolves it to a **display name** via the members cache for output. "Author" is the
+the CLI resolves it to a **display name** via the members cache for output, falling back to the
+raw UUID when the member is unknown or the members list is unavailable. "Author" is the
 user-facing role name; "actor" is the raw API field.
 _Avoid_: actor, user, creator, commenter (as the user-facing label for this role).
