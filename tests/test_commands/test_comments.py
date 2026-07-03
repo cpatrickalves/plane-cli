@@ -83,3 +83,52 @@ async def test_fetch_issue_comments_raises_on_failure(mock_comments, mock_member
 
     with pytest.raises(PlaneError):
         await fetch_issue_comments("ws", "p1", "item-1")
+
+
+@patch("planecli.commands.comments.output")
+@patch("planecli.commands.comments.fetch_issue_comments", new_callable=AsyncMock)
+@patch(
+    "planecli.commands.comments.resolve_work_item_across_projects_async",
+    new_callable=AsyncMock,
+)
+@patch("planecli.commands.comments.get_workspace", return_value="ws")
+@patch("planecli.commands.comments.get_client")
+async def test_comment_ls_tail_slices_most_recent(
+    mock_client, mock_ws, mock_resolve, mock_fetch, mock_output
+):
+    from planecli.commands.comments import list_
+
+    mock_resolve.return_value = ({"id": "item-1"}, "p1")
+    mock_fetch.return_value = [
+        {"id": "c1", "created_at": "t1"},
+        {"id": "c2", "created_at": "t2"},
+        {"id": "c3", "created_at": "t3"},
+    ]
+
+    await list_("ABC-1", limit=2)
+
+    mock_fetch.assert_awaited_once_with("ws", "p1", "item-1")
+    data = mock_output.call_args[0][0]
+    assert [c["id"] for c in data] == ["c2", "c3"]  # most recent 2, still chronological
+
+
+@patch("planecli.commands.comments.output")
+@patch("planecli.commands.comments.fetch_issue_comments", new_callable=AsyncMock)
+@patch(
+    "planecli.commands.comments.resolve_work_item_across_projects_async",
+    new_callable=AsyncMock,
+)
+@patch("planecli.commands.comments.get_workspace", return_value="ws")
+@patch("planecli.commands.comments.get_client")
+async def test_comment_ls_hard_fails_on_plane_error(
+    mock_client, mock_ws, mock_resolve, mock_fetch, mock_output
+):
+    from planecli.commands.comments import list_
+    from planecli.exceptions import PlaneCLIError
+
+    mock_resolve.return_value = ({"id": "item-1"}, "p1")
+    mock_fetch.side_effect = PlaneError("boom")
+
+    with pytest.raises(PlaneCLIError):
+        await list_("ABC-1", limit=50)
+    mock_output.assert_not_called()

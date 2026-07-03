@@ -95,7 +95,7 @@ async def list_(
     project
         Project name/ID (required for name-based lookup).
     limit
-        Maximum comments to show.
+        Maximum comments to show (the most recent N).
     """
     try:
         client = get_client()
@@ -112,15 +112,12 @@ async def list_(
             )
 
         item_id = item["id"]
-        response = await run_sdk(
-            client.work_items.comments.list, workspace, project_id, item_id
-        )
-        comments = response.results if hasattr(response, "results") else []
+        comments = await fetch_issue_comments(workspace, project_id, item_id)
     except PlaneError as e:
         raise handle_api_error(e)
 
-    data = [_enrich_comment(c.model_dump()) for c in comments]
-    data = data[:limit]
+    # --limit selects the most recent N, still rendered oldest -> newest.
+    data = comments[-limit:] if limit else comments
     output(data, COMMENT_COLUMNS, title=f"Comments on {issue}", as_json=json)
 
 
