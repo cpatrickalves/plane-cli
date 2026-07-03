@@ -1,6 +1,6 @@
 [project]
 name = "planecli"
-version = "0.3.0"
+version = "0.4.0"
 description = "CLI for Plane.so project management"
 readme = "README.md"
 license = "MIT"

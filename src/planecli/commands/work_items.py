@@ -220,6 +220,7 @@ async def list_(
     assignee: str | None = None,
     state: str | None = None,
     labels: str | None = None,
+    parent: str | None = None,
     sort: str = "created",
     limit: Annotated[int, Parameter(alias="-l")] = 50,
     json: bool = False,
@@ -236,6 +237,9 @@ async def list_(
         Filter by state name (comma-separated).
     labels
         Filter by label name (comma-separated).
+    parent
+        Filter by parent work item identifier (ABC-123), UUID, or name
+        (name requires --project).
     sort
         Sort by: created (default), updated.
     limit
@@ -354,6 +358,25 @@ async def list_(
                     for token in state_tokens
                 )
             ]
+
+    # Filter by parent work item
+    if parent:
+        if project:
+            project_id = projects_to_list[0]["id"] if projects_to_list else None
+            if project_id:
+                parent_data = await resolve_work_item_async(
+                    parent, client, workspace, project_id
+                )
+            else:
+                parent_data, _ = await resolve_work_item_across_projects_async(
+                    parent, client, workspace
+                )
+        else:
+            parent_data, _ = await resolve_work_item_across_projects_async(
+                parent, client, workspace
+            )
+        parent_id = parent_data["id"]
+        data = [d for d in data if d.get("parent") == parent_id]
 
     # Filter by labels (comma-separated, OR logic, substring match)
     if labels:
