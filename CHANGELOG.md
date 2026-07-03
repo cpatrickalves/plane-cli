@@ -4,23 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Adicionado
-- Opção `--status` nos comandos `module create` e `module update` (valores: `backlog`, `planned`, `in-progress`, `paused`, `completed`, `cancelled`), com aliases em inglês e português (ex.: `em andamento`, `concluído`, `cancelado`) e validação com mensagem de erro clara
+### Added
+- `--status` option in the `module create` and `module update` commands (values: `backlog`, `planned`, `in-progress`, `paused`, `completed`, `cancelled`), with English and Portuguese aliases (e.g., `em andamento`, `concluído`, `cancelado`) and validation with a clear error message
 
 ## [0.3.0] - 2026-02-12
 
-### Adicionado
-- Logging estruturado com loguru e redução de chamadas à API via smart caching
-- Retry automático com tenacity para rate limits e erros transientes na API
-- Resolução de UUID de estimate_point no parâmetro `--estimate` do comando `wi`
+### Added
+- Structured logging with loguru and reduced API calls via smart caching
+- Automatic retry with tenacity for rate limits and transient API errors
+- estimate_point UUID resolution in the `--estimate` parameter of the `wi` command
 
-### Corrigido
-- Correção do bypass de validação do SDK para assignees/labels na resolução de work items
-- Removida supressão silenciosa de exceções no filtro de assignees do `wi`
+### Fixed
+- Fixed the SDK validation bypass for assignees/labels in work item resolution
+- Removed silent exception suppression in the `wi` assignees filter
 
-### Alterado
-- Removida coluna redundante de Project na listagem `wi list`
-- Atualizada terminologia no README de "API Key" para "Personal Access Token"
+### Changed
+- Removed redundant Project column from the `wi list` listing
+- Updated README terminology from "API Key" to "Personal Access Token"
 
 ## [0.2.0] - 2026-02-11
 
