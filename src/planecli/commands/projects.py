@@ -36,6 +36,11 @@ _NETWORK_TO_STATE = {
 }
 
 
+def _default_identifier(name: str) -> str:
+    """Derive a default project identifier from the project name."""
+    return "".join(c for c in name if c.isalnum())[:5].upper()
+
+
 def _enrich_project(data: dict) -> dict:
     """Add convenience fields to a project dict."""
     network = data.get("network")
@@ -157,9 +162,8 @@ async def create(
         client = get_client()
         workspace = get_workspace()
 
-        create_data = CreateProject(name=name)
-        if identifier:
-            create_data.identifier = identifier.upper()
+        resolved_identifier = (identifier or _default_identifier(name)).upper()
+        create_data = CreateProject(name=name, identifier=resolved_identifier)
         if description:
             create_data.description = description
 
