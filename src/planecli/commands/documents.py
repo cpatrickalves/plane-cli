@@ -165,9 +165,8 @@ async def create(
         client = get_client()
         workspace = get_workspace()
 
-        page_data = CreatePage(name=title)
-        if content:
-            page_data.description_html = f"<p>{content}</p>"
+        description_html = f"<p>{content}</p>" if content else "<p></p>"
+        page_data = CreatePage(name=title, description_html=description_html)
 
         if project:
             proj = await resolve_project_async(project, client, workspace)
