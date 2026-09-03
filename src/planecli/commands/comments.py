@@ -31,6 +31,27 @@ COMMENT_COLUMNS = [
 ]
 
 
+_URL_RE = re.compile(r"(?<![\"'>=])(https?://[A-Za-z0-9\-._~:/?#\[\]@!$&()*+,;=%]+)")
+# Trailing punctuation that belongs to the sentence, not the URL.
+_URL_TRAIL = ".,;:!?)]}。，；：！？）】、"
+
+
+def _linkify(text: str) -> str:
+    """Turn bare http(s) URLs into anchors.
+
+    The API stores comment HTML verbatim and does not auto-link URLs — only
+    the web editor does — so links posted via the CLI would render as plain
+    text. URLs already inside an href attribute are left alone.
+    """
+
+    def _sub(m: re.Match[str]) -> str:
+        url = m.group(1).rstrip(_URL_TRAIL)
+        trail = m.group(1)[len(url) :]
+        return f'<a href="{url}">{url}</a>{trail}'
+
+    return _URL_RE.sub(_sub, text)
+
+
 def _body_to_html(body: str) -> str:
     """Convert plain comment text to HTML paragraphs.
 
@@ -39,7 +60,9 @@ def _body_to_html(body: str) -> str:
     newlines would render as one long line.
     """
     paragraphs = re.split(r"\n\s*\n", body.strip())
-    return "".join(f"<p>{p.strip().replace(chr(10), '<br/>')}</p>" for p in paragraphs if p.strip())
+    return "".join(
+        f"<p>{_linkify(p.strip()).replace(chr(10), '<br/>')}</p>" for p in paragraphs if p.strip()
+    )
 
 
 def _enrich_comment(data: dict, members_map: dict[str, str] | None = None) -> dict:

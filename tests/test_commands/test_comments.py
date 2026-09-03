@@ -24,6 +24,35 @@ def test_body_to_html_converts_single_newline_to_br():
     assert _body_to_html(body) == "<p>追加修复：<br/>1) first<br/>2) second</p>"
 
 
+def test_body_to_html_linkifies_bare_url():
+    body = "PR https://github.com/owner/repo/pull/12"
+    assert (
+        _body_to_html(body) == '<p>PR <a href="https://github.com/owner/repo/pull/12">'
+        "https://github.com/owner/repo/pull/12</a></p>"
+    )
+
+
+def test_body_to_html_keeps_trailing_punctuation_out_of_link():
+    body = "见 https://example.com/a。下一条"
+    assert (
+        _body_to_html(body)
+        == '<p>见 <a href="https://example.com/a">https://example.com/a</a>。下一条</p>'
+    )
+
+
+def test_body_to_html_does_not_double_link_existing_anchor():
+    body = '<a href="https://example.com">https://example.com</a>'
+    assert _body_to_html(body) == f"<p>{body}</p>"
+
+
+def test_body_to_html_linkifies_multiple_urls_in_one_line():
+    body = "Issue https://a/1\nPR https://b/2"
+    assert (
+        _body_to_html(body) == '<p>Issue <a href="https://a/1">https://a/1</a><br/>'
+        'PR <a href="https://b/2">https://b/2</a></p>'
+    )
+
+
 def test_enrich_comment_resolves_actor_name_from_members_map():
     members_map = {"user-1": "Alice"}
     result = _enrich_comment({"actor": "user-1", "comment_html": "<p>hello</p>"}, members_map)
