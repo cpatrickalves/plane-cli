@@ -53,6 +53,33 @@ def test_body_to_html_linkifies_multiple_urls_in_one_line():
     )
 
 
+def test_body_to_html_converts_inline_backticks_to_code():
+    body = "分支 `feat/x`，已推送"
+    assert _body_to_html(body) == "<p>分支 <code>feat/x</code>，已推送</p>"
+
+
+def test_body_to_html_escapes_html_inside_inline_code():
+    body = "存 `<p>` 标签"
+    assert _body_to_html(body) == "<p>存 <code>&lt;p&gt;</code> 标签</p>"
+
+
+def test_body_to_html_does_not_linkify_url_inside_code():
+    body = "`https://a/1` 是内部地址"
+    assert _body_to_html(body) == "<p><code>https://a/1</code> 是内部地址</p>"
+
+
+def test_body_to_html_converts_fenced_block_to_pre():
+    body = "前\n\n```\ncode <b>x</b>\n```\n\n后"
+    assert (
+        _body_to_html(body) == "<p>前</p><pre><code>code &lt;b&gt;x&lt;/b&gt;</code></pre><p>后</p>"
+    )
+
+
+def test_body_to_html_fenced_block_ignores_language_hint():
+    body = "```python\nprint(1)\n```"
+    assert _body_to_html(body) == "<pre><code>print(1)</code></pre>"
+
+
 def test_enrich_comment_resolves_actor_name_from_members_map():
     members_map = {"user-1": "Alice"}
     result = _enrich_comment({"actor": "user-1", "comment_html": "<p>hello</p>"}, members_map)
