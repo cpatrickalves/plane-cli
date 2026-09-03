@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 from typing import Annotated
 
 import cyclopts
@@ -195,6 +196,27 @@ async def _resolve_project_id_async(project: str | None) -> str:
     workspace = get_workspace()
     resolved = await resolve_project_async(project, client, workspace)
     return resolved["id"]
+
+
+def _validate_date(value: str | None, flag: str) -> str | None:
+    """Validate a YYYY-MM-DD date flag; None passes through unchanged.
+
+    Rejecting bad formats here matters more than for other flags: the API
+    silently ignores a malformed or misnamed date field and answers 200
+    (ADR-0007), so a typo would otherwise look like success.
+    """
+    if value is None:
+        return None
+    try:
+        datetime.date.fromisoformat(value)
+    except ValueError:
+        from planecli.exceptions import ValidationError
+
+        raise ValidationError(
+            f"Invalid date for {flag}: {value!r} (expected YYYY-MM-DD).",
+            hint=f"Example: {flag} 2026-09-15",
+        )
+    return value
 
 
 async def _fetch_project_data(
@@ -491,6 +513,8 @@ async def create(
     parent: str | None = None,
     estimate: Annotated[int | None, Parameter(alias="-e")] = None,
     description: Annotated[str | None, Parameter(alias="-d")] = None,
+    start_date: str | None = None,
+    target_date: str | None = None,
     json: bool = False,
 ) -> None:
     """Create a new work item.
@@ -517,8 +541,15 @@ async def create(
         Story point estimate.
     description
         Work item description (plain text).
+    start_date
+        Start date (YYYY-MM-DD). Defaults to the creation date when omitted.
+    target_date
+        Target end date (YYYY-MM-DD).
     """
     from plane.models.work_items import CreateWorkItem
+
+    start_date = _validate_date(start_date, "--start-date")
+    target_date = _validate_date(target_date, "--target-date")
 
     try:
         client = get_client()
@@ -542,6 +573,12 @@ async def create(
 
         if description:
             create_data.description_html = f"<p>{description}</p>"
+
+        if start_date:
+            create_data.start_date = start_date
+
+        if target_date:
+            create_data.target_date = target_date
 
         if priority:
             priority_map = {"0": "none", "1": "urgent", "2": "high", "3": "medium", "4": "low"}
@@ -626,6 +663,8 @@ async def update(
     name: str | None = None,
     estimate: Annotated[int | None, Parameter(alias="-e")] = None,
     description: Annotated[str | None, Parameter(alias="-d")] = None,
+    start_date: str | None = None,
+    target_date: str | None = None,
     json: bool = False,
 ) -> None:
     """Update a work item.
@@ -652,8 +691,15 @@ async def update(
         Story point estimate.
     description
         New description (plain text).
+    start_date
+        New start date (YYYY-MM-DD).
+    target_date
+        New target end date (YYYY-MM-DD).
     """
     from plane.models.work_items import UpdateWorkItem
+
+    start_date = _validate_date(start_date, "--start-date")
+    target_date = _validate_date(target_date, "--target-date")
 
     try:
         client = get_client()
@@ -724,10 +770,30 @@ async def update(
         if clear_labels:
             update_data.labels = []
 
+        if start_date is not None:
+            update_data.start_date = start_date
+
+        if target_date is not None:
+            update_data.target_date = target_date
+
         updated = await run_sdk(
             client.work_items.update, workspace, project_id, item_id, update_data
         )
         data = _enrich_work_item(updated.model_dump())
+
+        # Verify the server actually applied the dates (ADR-0007: Plane silently
+        # ignores unknown/mis-spelled fields with a 200, so a missing echo means
+        # the write was dropped, not applied).
+        for flag, asked, got in (
+            ("--start-date", start_date, data.get("start_date")),
+            ("--target-date", target_date, data.get("target_date")),
+        ):
+            if asked is not None and got != asked:
+                from planecli.exceptions import APIError
+
+                raise APIError(
+                    f"The server did not apply {flag}: asked {asked!r}, got {got!r}."
+                )
 
         # Invalidate work items cache for this project
         from planecli.cache import invalidate_resource

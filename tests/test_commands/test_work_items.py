@@ -7,8 +7,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from plane.errors import HttpError
 
-from planecli.commands.work_items import WI_COLUMNS, WI_FIELDS, create, list_, update
-from planecli.commands.work_items import _enrich_work_item
+from planecli.commands.work_items import (
+    WI_COLUMNS,
+    WI_FIELDS,
+    _enrich_work_item,
+    _validate_date,
+    create,
+    list_,
+    update,
+)
 
 
 def _make_http_error(status_code: int, message: str = "") -> HttpError:
@@ -1418,3 +1425,23 @@ class TestWiShow:
         mock_fetch.assert_not_awaited()
         printed = " ".join(str(c.args[0]) for c in mock_console.print.call_args_list)
         assert "failed to load" not in printed
+
+
+class TestValidateDate:
+    """Unit tests for the YYYY-MM-DD flag validator used by wi create/update."""
+
+    def test_passes_none_through(self):
+        assert _validate_date(None, "--start-date") is None
+
+    @pytest.mark.parametrize("good", ["2026-09-15", "2026-01-01", "2026-12-31"])
+    def test_accepts_valid_dates(self, good):
+        assert _validate_date(good, "--target-date") == good
+
+    @pytest.mark.parametrize(
+        "bad", ["2026-9-5", "09-15-2026", "2026-09-31", "tomorrow", ""]
+    )
+    def test_rejects_invalid_dates(self, bad):
+        from planecli.exceptions import ValidationError
+
+        with pytest.raises(ValidationError):
+            _validate_date(bad, "--start-date")
