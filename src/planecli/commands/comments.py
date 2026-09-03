@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Annotated
 
 import cyclopts
@@ -30,6 +31,17 @@ COMMENT_COLUMNS = [
 ]
 
 
+def _body_to_html(body: str) -> str:
+    """Convert plain comment text to HTML paragraphs.
+
+    Blank lines separate paragraphs; a single newline becomes a br tag —
+    the editor collapses whitespace inside a paragraph, so unconverted
+    newlines would render as one long line.
+    """
+    paragraphs = re.split(r"\n\s*\n", body.strip())
+    return "".join(f"<p>{p.strip().replace(chr(10), '<br/>')}</p>" for p in paragraphs if p.strip())
+
+
 def _enrich_comment(data: dict, members_map: dict[str, str] | None = None) -> dict:
     """Add convenience fields to a comment dict.
 
@@ -48,6 +60,7 @@ def _enrich_comment(data: dict, members_map: dict[str, str] | None = None) -> di
     body_html = data.get("comment_html") or ""
     if body_html:
         import re
+
         data["body_text"] = re.sub(r"<[^>]+>", "", body_html).strip()
     else:
         data["body_text"] = ""
@@ -55,9 +68,7 @@ def _enrich_comment(data: dict, members_map: dict[str, str] | None = None) -> di
     return data
 
 
-async def fetch_issue_comments(
-    workspace: str, project_id: str, item_id: str
-) -> list[dict]:
+async def fetch_issue_comments(workspace: str, project_id: str, item_id: str) -> list[dict]:
     """Fetch, enrich, and chronologically sort all comments for a work item.
 
     Single source of truth shared by `comment ls` and `wi show`. Resolves the
@@ -111,6 +122,7 @@ async def list_(
 
         if project:
             from planecli.utils.resolve import resolve_project_async
+
             proj = await resolve_project_async(project, client, workspace)
             project_id = proj["id"]
             item = await resolve_work_item_async(issue, client, workspace, project_id)
@@ -159,6 +171,7 @@ async def create(
 
         if project:
             from planecli.utils.resolve import resolve_project_async
+
             proj = await resolve_project_async(project, client, workspace)
             project_id = proj["id"]
             item = await resolve_work_item_async(issue, client, workspace, project_id)
@@ -169,13 +182,17 @@ async def create(
 
         item_id = item["id"]
 
-        comment_data = CreateWorkItemComment(comment_html=f"<p>{body}</p>")
+        comment_data = CreateWorkItemComment(comment_html=_body_to_html(body))
         comment = await run_sdk(
             client.work_items.comments.create,
-            workspace, project_id, item_id, comment_data,
+            workspace,
+            project_id,
+            item_id,
+            comment_data,
         )
         data = _enrich_comment(comment.model_dump())
         from planecli.cache import invalidate_resource
+
         await invalidate_resource("comments", workspace, project_id, item_id)
     except PlaneError as e:
         raise handle_api_error(e)
@@ -184,6 +201,7 @@ async def create(
         output_single(data, [], as_json=True)
     else:
         from planecli.formatters import console
+
         console.print(f"[green]Comment added to {issue}.[/]")
 
 
@@ -217,6 +235,7 @@ async def update(
 
         if project:
             from planecli.utils.resolve import resolve_project_async
+
             proj = await resolve_project_async(project, client, workspace)
             project_id = proj["id"]
             item = await resolve_work_item_async(issue, client, workspace, project_id)
@@ -227,13 +246,18 @@ async def update(
 
         item_id = item["id"]
 
-        update_data = UpdateWorkItemComment(comment_html=f"<p>{body}</p>")
+        update_data = UpdateWorkItemComment(comment_html=_body_to_html(body))
         comment = await run_sdk(
             client.work_items.comments.update,
-            workspace, project_id, item_id, comment_id, update_data,
+            workspace,
+            project_id,
+            item_id,
+            comment_id,
+            update_data,
         )
         data = _enrich_comment(comment.model_dump())
         from planecli.cache import invalidate_resource
+
         await invalidate_resource("comments", workspace, project_id, item_id)
     except PlaneError as e:
         raise handle_api_error(e)
@@ -242,6 +266,7 @@ async def update(
         output_single(data, [], as_json=True)
     else:
         from planecli.formatters import console
+
         console.print(f"[green]Comment updated on {issue}.[/]")
 
 
@@ -271,6 +296,7 @@ async def delete(
 
         if project:
             from planecli.utils.resolve import resolve_project_async
+
             proj = await resolve_project_async(project, client, workspace)
             project_id = proj["id"]
             item = await resolve_work_item_async(issue, client, workspace, project_id)
@@ -282,9 +308,13 @@ async def delete(
         item_id = item["id"]
         await run_sdk(
             client.work_items.comments.delete,
-            workspace, project_id, item_id, comment_id,
+            workspace,
+            project_id,
+            item_id,
+            comment_id,
         )
         from planecli.cache import invalidate_resource
+
         await invalidate_resource("comments", workspace, project_id, item_id)
     except PlaneError as e:
         raise handle_api_error(e)

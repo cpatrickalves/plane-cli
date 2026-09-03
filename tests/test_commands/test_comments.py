@@ -7,14 +7,26 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from plane.errors import PlaneError
 
-from planecli.commands.comments import _enrich_comment
+from planecli.commands.comments import _body_to_html, _enrich_comment
+
+
+def test_body_to_html_wraps_single_line_in_one_paragraph():
+    assert _body_to_html("hello") == "<p>hello</p>"
+
+
+def test_body_to_html_splits_blank_lines_into_paragraphs():
+    body = "first\n\nsecond\n\n\nthird"
+    assert _body_to_html(body) == "<p>first</p><p>second</p><p>third</p>"
+
+
+def test_body_to_html_converts_single_newline_to_br():
+    body = "追加修复：\n1) first\n2) second"
+    assert _body_to_html(body) == "<p>追加修复：<br/>1) first<br/>2) second</p>"
 
 
 def test_enrich_comment_resolves_actor_name_from_members_map():
     members_map = {"user-1": "Alice"}
-    result = _enrich_comment(
-        {"actor": "user-1", "comment_html": "<p>hello</p>"}, members_map
-    )
+    result = _enrich_comment({"actor": "user-1", "comment_html": "<p>hello</p>"}, members_map)
     assert result["actor_name"] == "Alice"
     assert result["body_text"] == "hello"
 
@@ -25,9 +37,7 @@ def test_enrich_comment_falls_back_to_uuid_without_map():
 
 
 def test_enrich_comment_falls_back_to_uuid_when_member_missing():
-    result = _enrich_comment(
-        {"actor": "user-x", "comment_html": ""}, {"user-1": "Alice"}
-    )
+    result = _enrich_comment({"actor": "user-x", "comment_html": ""}, {"user-1": "Alice"})
     assert result["actor_name"] == "user-x"
     assert result["body_text"] == ""
 
@@ -43,10 +53,18 @@ async def test_fetch_issue_comments_sorts_and_resolves(mock_comments, mock_membe
     ]
     # Returned out of order; helper must sort oldest -> newest
     mock_comments.return_value = [
-        {"id": "c2", "actor": "u2", "comment_html": "<p>later</p>",
-         "created_at": "2026-02-11T10:00:00Z"},
-        {"id": "c1", "actor": "u1", "comment_html": "<p>earlier</p>",
-         "created_at": "2026-02-10T10:00:00Z"},
+        {
+            "id": "c2",
+            "actor": "u2",
+            "comment_html": "<p>later</p>",
+            "created_at": "2026-02-11T10:00:00Z",
+        },
+        {
+            "id": "c1",
+            "actor": "u1",
+            "comment_html": "<p>earlier</p>",
+            "created_at": "2026-02-10T10:00:00Z",
+        },
     ]
 
     result = await fetch_issue_comments("ws", "p1", "item-1")
@@ -64,8 +82,12 @@ async def test_fetch_issue_comments_returns_all(mock_comments, mock_members):
 
     mock_members.return_value = []
     mock_comments.return_value = [
-        {"id": f"c{i}", "actor": "u1", "comment_html": "<p>x</p>",
-         "created_at": f"2026-02-{i:02d}T00:00:00Z"}
+        {
+            "id": f"c{i}",
+            "actor": "u1",
+            "comment_html": "<p>x</p>",
+            "created_at": f"2026-02-{i:02d}T00:00:00Z",
+        }
         for i in range(1, 31)
     ]
 
@@ -87,9 +109,7 @@ async def test_fetch_issue_comments_raises_on_failure(mock_comments, mock_member
 
 @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
 @patch("planecli.cache.cached_list_comments", new_callable=AsyncMock)
-async def test_fetch_issue_comments_degrades_when_members_fail(
-    mock_comments, mock_members
-):
+async def test_fetch_issue_comments_degrades_when_members_fail(mock_comments, mock_members):
     """A members-list failure is a secondary-enrichment concern: it must not
     take down comments that already loaded successfully (names fall back to
     the raw actor UUID, same as the no-map case)."""
@@ -97,8 +117,12 @@ async def test_fetch_issue_comments_degrades_when_members_fail(
 
     mock_members.side_effect = PlaneError("members unavailable")
     mock_comments.return_value = [
-        {"id": "c1", "actor": "u1", "comment_html": "<p>hi</p>",
-         "created_at": "2026-02-10T10:00:00Z"},
+        {
+            "id": "c1",
+            "actor": "u1",
+            "comment_html": "<p>hi</p>",
+            "created_at": "2026-02-10T10:00:00Z",
+        },
     ]
 
     result = await fetch_issue_comments("ws", "p1", "item-1")
