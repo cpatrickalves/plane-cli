@@ -444,7 +444,57 @@ async def show(
     except PlaneError as e:
         raise handle_api_error(e)
 
-    data = _enrich_work_item(data)
+    # The detail endpoint returns state/labels/assignees as bare UUIDs (SDK
+    # model mismatch, ADR-0003). Build the same lookup maps wi ls uses so the
+    # *_name fields hold real names here too. Failure degrades to raw UUIDs.
+    state_map: dict[str, dict[str, str | None]] = {}
+    member_map: dict[str, str] = {}
+    label_map: dict[str, dict[str, str | None]] = {}
+    if data.get("project"):
+        try:
+            from planecli.cache import (
+                cached_list_labels,
+                cached_list_members,
+                cached_list_states,
+            )
+
+            members, states, labels_list = await asyncio.gather(
+                cached_list_members(workspace),
+                cached_list_states(workspace, data["project"]),
+                cached_list_labels(workspace, data["project"]),
+            )
+            member_map = {
+                m["id"]: " ".join(
+                    p for p in [m.get("first_name", ""), m.get("last_name", "")]
+                    if p
+                )
+                or m.get("display_name", "")
+                for m in members
+                if m.get("id")
+            }
+            state_map = {
+                s["id"]: {
+                    "name": s.get("name"),
+                    "color": s.get("color"),
+                    "group": s.get("group"),
+                }
+                for s in states
+                if s.get("id") and s.get("name")
+            }
+            label_map = {
+                lb["id"]: {"name": lb.get("name"), "color": lb.get("color")}
+                for lb in labels_list
+                if lb.get("id") and lb.get("name")
+            }
+        except PlaneError:
+            pass
+
+    data = _enrich_work_item(
+        data,
+        state_map=state_map,
+        member_map=member_map,
+        label_map=label_map,
+    )
 
     # Comments are a SECONDARY enrichment: fetched in their own block OUTSIDE the
     # resolve/estimate try above, so a comment API failure degrades to null
