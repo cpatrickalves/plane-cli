@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 from typing import Annotated
 
 import cyclopts
@@ -12,6 +13,7 @@ from plane.errors import PlaneError
 from planecli.api.async_sdk import run_sdk
 from planecli.api.client import get_client, get_workspace, handle_api_error
 from planecli.formatters import output, output_single
+from planecli.utils.body_html import body_to_html
 from planecli.utils.resolve import resolve_project_async
 
 doc_app = cyclopts.App(
@@ -40,6 +42,7 @@ def _enrich_doc(data: dict) -> dict:
     desc_html = data.get("description_html") or ""
     if desc_html:
         import re
+
         data["content_text"] = re.sub(r"<[^>]+>", "", desc_html).strip()
     else:
         data["content_text"] = ""
@@ -75,12 +78,11 @@ async def list_(
             project_id = proj["id"]
             # Use direct API call since SDK doesn't have list_project_pages
             from planecli.api.client import get_config
+
             config = get_config()
             url = f"{config.base_url}/api/v1/workspaces/{workspace}/projects/{project_id}/pages/"
             headers = {"X-Api-Key": config.api_key}
-            resp = await asyncio.to_thread(
-                requests.get, url, headers=headers, timeout=30
-            )
+            resp = await asyncio.to_thread(requests.get, url, headers=headers, timeout=30)
             resp.raise_for_status()
             resp_data = resp.json()
             # Handle paginated response
@@ -129,9 +131,7 @@ async def show(
                 client.pages.retrieve_project_page, workspace, project_id, document
             )
         else:
-            page = await run_sdk(
-                client.pages.retrieve_workspace_page, workspace, document
-            )
+            page = await run_sdk(client.pages.retrieve_workspace_page, workspace, document)
 
         data = _enrich_doc(page.model_dump())
     except PlaneError as e:
@@ -165,20 +165,19 @@ async def create(
         client = get_client()
         workspace = get_workspace()
 
-        page_data = CreatePage(name=title)
-        if content:
-            page_data.description_html = f"<p>{content}</p>"
+        # description_html is a required SDK field — omitting it crashes
+        # CreatePage construction even for an empty body.
+        page_data = CreatePage(
+            name=title,
+            description_html=body_to_html(content) if content is not None else "<p></p>",
+        )
 
         if project:
             proj = await resolve_project_async(project, client, workspace)
             project_id = proj["id"]
-            page = await run_sdk(
-                client.pages.create_project_page, workspace, project_id, page_data
-            )
+            page = await run_sdk(client.pages.create_project_page, workspace, project_id, page_data)
         else:
-            page = await run_sdk(
-                client.pages.create_workspace_page, workspace, page_data
-            )
+            page = await run_sdk(client.pages.create_workspace_page, workspace, page_data)
 
         data = _enrich_doc(page.model_dump())
     except PlaneError as e:
@@ -217,13 +216,14 @@ async def update(
         client = get_client()
         workspace = get_workspace()
         from planecli.api.client import get_config
+
         config = get_config()
 
         update_payload: dict = {}
         if title:
             update_payload["name"] = title
-        if content:
-            update_payload["description_html"] = f"<p>{content}</p>"
+        if content is not None:
+            update_payload["description_html"] = body_to_html(content)
 
         if project:
             proj = await resolve_project_async(project, client, workspace)
@@ -260,16 +260,21 @@ async def delete(
     project
         Project name/ID (required for project-level pages).
 
-    Note: Uses direct API call since the SDK doesn't support page deletion.
+    Note: The API only deletes pages that are already archived, and silently
+    ignores unknown fields on the archive request — so this PATCHes archived_at
+    (today, YYYY-MM-DD), verifies the response actually carries it, and only
+    then DELETEs.
     """
     import requests
 
+    from planecli.exceptions import APIError
     from planecli.formatters import console
 
     try:
         client = get_client()
         workspace = get_workspace()
         from planecli.api.client import get_config
+
         config = get_config()
 
         if project:
@@ -280,10 +285,24 @@ async def delete(
         else:
             url = f"{config.base_url}/api/v1/workspaces/{workspace}/pages/{document}/"
 
-        headers = {"X-Api-Key": config.api_key}
+        today = date.today().isoformat()
+        headers = {"X-Api-Key": config.api_key, "Content-Type": "application/json"}
+        # A 200 alone is not proof the archive happened — the API answers 200
+        # and ignores unknown fields, so verify archived_at came back set.
         resp = await asyncio.to_thread(
-            requests.delete, url, headers=headers, timeout=30
+            requests.patch,
+            url,
+            headers=headers,
+            json={"archived_at": today},
+            timeout=30,
         )
+        resp.raise_for_status()
+        if resp.json().get("archived_at") != today:
+            raise APIError(
+                "the document was not archived, so it was not deleted. "
+                "Archiving may require a higher project role."
+            )
+        resp = await asyncio.to_thread(requests.delete, url, headers=headers, timeout=30)
         resp.raise_for_status()
     except PlaneError as e:
         raise handle_api_error(e)
