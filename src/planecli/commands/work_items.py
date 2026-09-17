@@ -491,6 +491,8 @@ async def create(
     parent: str | None = None,
     estimate: Annotated[int | None, Parameter(alias="-e")] = None,
     description: Annotated[str | None, Parameter(alias="-d")] = None,
+    image: Annotated[list[str] | None, Parameter(alias="-i")] = None,
+    force: bool = False,
     json: bool = False,
 ) -> None:
     """Create a new work item.
@@ -517,6 +519,11 @@ async def create(
         Story point estimate.
     description
         Work item description (plain text).
+    image
+        Image file path to embed in the description (repeatable). The image is
+        uploaded as an attachment and an img tag is appended to the description.
+    force
+        Upload images even if an attachment with the same file name already exists.
     """
     from plane.models.work_items import CreateWorkItem
 
@@ -540,7 +547,7 @@ async def create(
 
         create_data = CreateWorkItem(name=title)
 
-        if description:
+        if description and not image:
             create_data.description_html = f"<p>{description}</p>"
 
         if priority:
@@ -607,6 +614,27 @@ async def create(
                 workspace, project_id, module_data["id"], [data["id"]],
             )
 
+        # Embed images: upload each, then append <img> tags to the description
+        # (set here, not in create, because uploads need the issue to exist).
+        if image:
+            from plane.models.work_items import UpdateWorkItem
+
+            from planecli.commands.attachments import embed_html, upload_embed_image
+
+            parts = [f"<p>{description}</p>"] if description else []
+            for path in image:
+                asset_id = await upload_embed_image(
+                    client, workspace, project_id, data["id"], path, force=force
+                )
+                parts.append(embed_html(asset_id))
+            await run_sdk(
+                client.work_items.update,
+                workspace, project_id, data["id"],
+                UpdateWorkItem(description_html="".join(parts)),
+            )
+            data["description_html"] = "".join(parts)
+            data = _enrich_work_item(data)
+
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -626,6 +654,8 @@ async def update(
     name: str | None = None,
     estimate: Annotated[int | None, Parameter(alias="-e")] = None,
     description: Annotated[str | None, Parameter(alias="-d")] = None,
+    image: Annotated[list[str] | None, Parameter(alias="-i")] = None,
+    force: bool = False,
     json: bool = False,
 ) -> None:
     """Update a work item.
@@ -652,6 +682,12 @@ async def update(
         Story point estimate.
     description
         New description (plain text).
+    image
+        Image file path to embed in the description (repeatable). Uploaded as
+        an attachment and appended to the existing description, or to the new
+        --description if one is given.
+    force
+        Upload images even if an attachment with the same file name already exists.
     """
     from plane.models.work_items import UpdateWorkItem
 
@@ -674,7 +710,22 @@ async def update(
         if name:
             update_data.name = name
 
-        if description:
+        # Embed images: upload each, then append <img> tags — to the new
+        # --description when given, otherwise to the existing one.
+        if image:
+            from planecli.commands.attachments import embed_html, upload_embed_image
+
+            parts = [f"<p>{description}</p>"] if description else [
+                item_data.get("description_html") or ""
+            ]
+            for path in image:
+                asset_id = await upload_embed_image(
+                    client, workspace, project_id, item_id, path, force=force
+                )
+                parts.append(embed_html(asset_id))
+            update_data.description_html = "".join(parts)
+
+        if description and not image:
             update_data.description_html = f"<p>{description}</p>"
 
         if priority:
