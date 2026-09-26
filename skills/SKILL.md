@@ -16,6 +16,7 @@ CLI for [Plane.so](https://plane.so). Installed as `planecli`.
 - **Fuzzy resolution**: every resource argument (project, state, label, user, work item) accepts a name, an identifier (`ABC-123`), or a UUID; close names resolve.
 - **`me`**: the authenticated user, valid wherever an assignee is expected.
 - **`--json`**: pass it on every command; JSON goes to stdout, the human table to stderr.
+- **Workspaces**: every command runs in the default workspace of `~/.plane_api`; `-w NAME` (a `[NAME]` section or any slug) switches for one command, `planecli workspaces` lists them.
 - **Caching**: reads are cached on disk. `--no-cache` bypasses it for one command; `planecli cache clear` resets it. Read back your own writes with `--no-cache`.
 - **Project scoping**: most commands take `-p PROJECT`. Identifiers (`ABC-123`) resolve across projects, and `wi ls` without `-p` spans all projects.
 
@@ -31,6 +32,7 @@ flag, filter, or sort key.
 planecli whoami --json          # authenticated user
 planecli configure              # interactive setup
 planecli users ls --json        # workspace members
+planecli workspaces --json      # configured workspaces; add -w NAME to any command
 ```
 
 ### Work Items (most common)

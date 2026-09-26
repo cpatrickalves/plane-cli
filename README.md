@@ -332,6 +332,32 @@ api_key=your-personal-access-token
 workspace=your-workspace-slug
 ```
 
+### Several Workspaces
+
+The lines at the top of `~/.plane_api` are the default workspace. Add a `[name]` section for every
+other workspace; a section sets `workspace` (the slug, default: the section name) and may set its
+own `api_key` and `base_url` (default: the top-level values, so a second workspace reachable with
+the same token needs only the slug):
+
+```ini
+[second]
+workspace=second-workspace-slug
+```
+
+Select a workspace for one command with the global `--workspace`/`-w` flag, by section name or by
+any slug, or for a shell with `PLANE_WORKSPACE`:
+
+```bash
+planecli workspaces                      # list configured workspaces (no secrets), mark the active one
+planecli -w second wi ls -p "Frontend"   # a [second] section
+planecli -w another-slug projects ls     # any workspace the token can reach
+PLANE_WORKSPACE=second planecli wi ls
+```
+
+Precedence for the workspace: `--workspace` > `PLANE_WORKSPACE` > the file's default. Inside the
+chosen section: CLI arguments > environment variables > section values > top-level values. The disk
+cache is keyed by base URL and workspace, so switching workspaces never mixes cached data.
+
 ## Output Formats
 
 By default, PlaneCLI renders results as colored Rich tables on stderr. Add `--json` to any command to get structured JSON on stdout:

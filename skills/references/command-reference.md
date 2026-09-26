@@ -20,11 +20,13 @@
 |---|---|
 | `--verbose` / `-v` | Enable verbose logging |
 | `--no-cache` | Bypass cache for this command |
+| `--workspace` / `-w NAME` | Run in another workspace: a `[NAME]` section of `~/.plane_api` or any slug (`planecli workspaces` lists them) |
 | `--json` | Output JSON to stdout (available on most commands) |
 | `--version` | Show version |
 | `--help` / `-h` | Show help |
 
 Environment variable `PLANECLI_NO_CACHE=1` disables cache globally.
+Environment variable `PLANE_WORKSPACE=NAME` selects the workspace for a whole shell; `-w` overrides it.
 
 ### Command aliases
 

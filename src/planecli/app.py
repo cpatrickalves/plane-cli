@@ -71,6 +71,58 @@ async def whoami(*, json: bool = False) -> None:
 
 
 @app.command
+def workspaces(*, json: bool = False) -> None:
+    """List the workspaces in ~/.plane_api (select one with --workspace/-w NAME)."""
+    from planecli.api.client import get_config
+    from planecli.config import list_workspaces
+    from planecli.formatters import output
+
+    try:
+        active = get_config().workspace
+    except PlaneCLIError:
+        active = ""
+    rows = [
+        {
+            "name": w.name,
+            "slug": w.slug,
+            "base_url": w.base_url,
+            "default": w.default,
+            "api_key": "own" if w.own_api_key else "shared",
+            "active": w.slug == active,
+        }
+        for w in list_workspaces()
+    ]
+    columns = [
+        ("name", "Name"),
+        ("slug", "Slug"),
+        ("default", "Default"),
+        ("active", "Active"),
+        ("api_key", "API key"),
+        ("base_url", "Base URL"),
+    ]
+    output(rows, columns, title="Workspaces", as_json=json)
+
+
+def _pop_option(argv: list[str], long: str, short: str) -> str | None:
+    """Remove ``--long VALUE``, ``--long=VALUE`` or ``-s VALUE`` from argv
+    (before a ``--`` separator) and return the value."""
+    end = argv.index("--") if "--" in argv else len(argv)
+    for i in range(1, end):
+        arg = argv[i]
+        if arg.startswith(long + "="):
+            del argv[i]
+            return arg.split("=", 1)[1]
+        if arg in (long, short):
+            if i + 1 >= end:
+                error_console.print(f"[bold red]Error:[/] {long} needs a workspace name or slug.")
+                sys.exit(1)
+            value = argv[i + 1]
+            del argv[i : i + 2]
+            return value
+    return None
+
+
+@app.command
 def configure() -> None:
     """Configure PlaneCLI credentials interactively."""
     import shutil
@@ -120,6 +172,12 @@ def main() -> None:
     if "--no-cache" in sys.argv:
         sys.argv.remove("--no-cache")
         no_cache = True
+
+    # Handle --workspace/-w NAME via sys.argv (before cyclopts parses): a
+    # [NAME] section of ~/.plane_api or any workspace slug.
+    from planecli.config import set_cli_workspace
+
+    set_cli_workspace(_pop_option(sys.argv, "--workspace", "-w"))
 
     setup_cache()
     set_no_cache(no_cache)
