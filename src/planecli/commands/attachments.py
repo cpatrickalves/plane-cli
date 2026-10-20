@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import mimetypes
 import os
+from pathlib import Path
 from typing import Annotated
 
 import cyclopts
@@ -48,10 +49,14 @@ def _enrich_attachment(data: dict) -> dict:
     return data
 
 
+_EXTRA_MIME = {".md": "text/markdown", ".markdown": "text/markdown", ".log": "text/plain"}
+
+
 def _guess_mime(filename: str) -> str:
     """Guess a MIME type, defaulting to application/octet-stream."""
     mime, _ = mimetypes.guess_type(filename)
-    return mime or "application/octet-stream"
+    # The platform MIME database is not the same everywhere (macOS lacks .md).
+    return mime or _EXTRA_MIME.get(Path(filename).suffix.lower(), "application/octet-stream")
 
 
 async def _resolve_item(issue: str, project: str | None):
@@ -309,6 +314,9 @@ async def attach(
     """
     from planecli.formatters import console
 
+    # Fail on a bad path before touching the config or the network.
+    if not os.path.isfile(file):
+        raise ValidationError(f"File not found: {file}")
     try:
         item, project_id = await _resolve_item(issue, project)
         client = get_client()
