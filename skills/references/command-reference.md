@@ -57,7 +57,7 @@ planecli wi ls [OPTIONS]
 |---|---|
 | `--project` / `-p` | Project name, identifier, or UUID (omit for all projects) |
 | `--assignee` | Filter by assignee name or `me` |
-| `--state` | Filter by state name (comma-separated for OR) |
+| `--state` | Filter by state name (comma-separated for OR); exact name, or a partial name that fits one state |
 | `--labels` | Filter by label name (comma-separated for OR) |
 | `--sort` | Sort by: `created` (default), `updated` |
 | `--limit` / `-l` | Max results (default: 50) |

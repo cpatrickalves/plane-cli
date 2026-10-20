@@ -1,19 +1,20 @@
 """Resource name/ID/UUID resolution layer.
 
 Tries resolution in order: UUID direct lookup -> identifier match -> fuzzy name match.
+States are the exception: their names match strictly (match_state_name).
 """
 
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Sequence
 
 from loguru import logger
 from plane.client import PlaneClient
 from plane.errors import HttpError
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_random_exponential
 
-from planecli.exceptions import ResourceNotFoundError
+from planecli.exceptions import ResourceNotFoundError, ValidationError
 from planecli.utils.fuzzy import find_best_match, find_matches
 
 UUID_PATTERN = re.compile(
@@ -39,6 +40,83 @@ def _reraise_if_retryable(exc: HttpError) -> None:
     """Re-raise transient HTTP errors so tenacity can retry them."""
     if _is_retryable(exc):
         raise
+
+
+def match_state_name(
+    query: str, states: Sequence[dict[str, Any]]
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    """Match a state by name without fuzzy guessing.
+
+    States are matched strictly because their names are short and often
+    overlap ("em qa", "pronto p/ qa"): a fuzzy pick silently moves a work
+    item to the wrong column (see ADR-0009). In order:
+
+    1. an exact, case-insensitive name;
+    2. the only name containing the query as a whole word;
+    3. the only name containing the query as a substring.
+
+    Returns (state, []) on a match. Otherwise returns (None, candidates):
+    the names that matched ambiguously, or [] when none did.
+    """
+    q = query.strip().casefold()
+    if not q:
+        return None, []
+
+    def name(s: dict[str, Any]) -> str:
+        return (s.get("name") or "").strip().casefold()
+
+    exact = [s for s in states if name(s) == q]
+    if exact:
+        return exact[0], []
+    word = re.compile(rf"(?<!\w){re.escape(q)}(?!\w)")
+    whole = [s for s in states if word.search(name(s))]
+    if len(whole) == 1:
+        return whole[0], []
+    if whole:
+        return None, whole
+    partial = [s for s in states if q in name(s)]
+    if len(partial) == 1:
+        return partial[0], []
+    return None, partial
+
+
+def resolve_state_name(query: str, states: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """Resolve a state name strictly (see match_state_name).
+
+    Prints a notice on stderr when the name was not an exact match, so the
+    user sees which state a partial name landed on. Raises ValidationError
+    listing the project's state names when nothing, or more than one state,
+    matches.
+    """
+    state, candidates = match_state_name(query, states)
+    if state is None:
+        raise state_match_error(query, states, candidates)
+    if (state.get("name") or "").strip().casefold() != query.strip().casefold():
+        from planecli.formatters import console
+
+        console.print(
+            f'State matched: "{query}" -> "{state.get("name")}"', markup=False, highlight=False
+        )
+    return state
+
+
+def state_match_error(
+    query: str,
+    states: Sequence[dict[str, Any]],
+    candidates: Sequence[dict[str, Any]],
+    *,
+    where: str = "this project",
+) -> ValidationError:
+    """Build the error for a state name that is unknown or ambiguous."""
+    names = ", ".join(f'"{s.get("name")}"' for s in states if s.get("name"))
+    hint = f"States in {where}: {names}." if names else f"There are no states in {where}."
+    if candidates:
+        matched = ", ".join(f'"{s.get("name")}"' for s in candidates)
+        return ValidationError(
+            f'State "{query}" is ambiguous: it matches {matched}.',
+            hint=f"Use the full state name. {hint}",
+        )
+    return ValidationError(f'No state matches "{query}".', hint=hint)
 
 
 @retry(
@@ -269,7 +347,7 @@ def resolve_module(
 def resolve_state(
     query: str, client: PlaneClient, workspace: str, project_id: str
 ) -> dict[str, Any]:
-    """Resolve a state by UUID or fuzzy name match.
+    """Resolve a state by UUID or strict name match (see match_state_name).
 
     Returns the state as a dict.
     """
@@ -282,12 +360,7 @@ def resolve_state(
             raise ResourceNotFoundError("State", query)
 
     states = _paginate_all(client.states.list, workspace, project_id)
-
-    match = find_best_match(query, states, key=lambda s: s.name or "")
-    if match:
-        return match.item.model_dump()
-
-    raise ResourceNotFoundError("State", query)
+    return resolve_state_name(query, [s.model_dump() for s in states])
 
 
 def resolve_cycle(
@@ -551,12 +624,7 @@ async def resolve_state_async(
             raise ResourceNotFoundError("State", query)
 
     states = await cached_list_states(workspace, project_id)
-
-    match = find_best_match(query, states, key=lambda s: s.get("name", ""))
-    if match:
-        return match.item
-
-    raise ResourceNotFoundError("State", query)
+    return resolve_state_name(query, states)
 
 
 async def resolve_cycle_async(

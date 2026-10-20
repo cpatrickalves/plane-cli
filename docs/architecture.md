@@ -28,7 +28,7 @@ record before reporting success — see [ADR-0007](adr/0007-verify-writes-the-ap
 
 **`commands/`** — one module per resource, each exposing a `cyclopts.App` with `list`/`show`/`create`/`update`/`delete` subcommands. This is where new features are added.
 
-**`utils/resolve.py`** — the resolution layer. Each resource has a `resolve_<x>` / `resolve_<x>_async` pair that tries **UUID → identifier → fuzzy name** in that order. Commands call the `_async` versions, which read through the cache.
+**`utils/resolve.py`** — the resolution layer. Each resource has a `resolve_<x>` / `resolve_<x>_async` pair that tries **UUID → identifier → fuzzy name** in that order (states match names strictly instead, see [ADR-0009](adr/0009-states-resolve-strictly.md)). Commands call the `_async` versions, which read through the cache.
 
 **`api/`** — `client.py` holds the `PlaneClient` singleton (`get_client`) plus `get_config`/`get_workspace`; `async_sdk.py` wraps the blocking SDK.
 
@@ -45,7 +45,7 @@ record before reporting success — see [ADR-0007](adr/0007-verify-writes-the-ap
 `planecli wi update ABC-123 --state "review"`:
 
 1. The `wi update` command resolves `ABC-123`. Because it matches the `ABC-123` identifier pattern, `resolve_work_item_async` fetches it directly via the raw SDK path (bypassing broken SDK validation — see [ADR-0003](adr/0003-sdk-escape-hatches.md)).
-2. `--state "review"` is resolved: `resolve_state_async` reads the project's **cached** state list and fuzzy-matches "review" to "In Review".
+2. `--state "review"` is resolved: `resolve_state_async` reads the project's **cached** state list and, since "review" is not an exact name but fits only "In Review", picks it and notes the match on stderr. States never resolve fuzzily — see [ADR-0009](adr/0009-states-resolve-strictly.md).
 3. The update call runs through `run_sdk()` — in a thread, rate-limited, retried on 429/5xx.
 4. The relevant cache entry is invalidated via `invalidate_resource(...)`.
 5. The result is rendered as a table (stderr) or JSON (stdout).
@@ -62,6 +62,7 @@ Major architecture decisions are documented as ADRs in [docs/adr/](adr/):
 - [ADR-0006](adr/0006-secondary-enrichment-degrades-to-null.md) — Secondary enrichment degrades to a null sentinel (partial success)
 - [ADR-0007](adr/0007-verify-writes-the-api-can-silently-ignore.md) — Verify writes the API can silently ignore
 - [ADR-0008](adr/0008-destructive-deletes-are-documented-not-prompted.md) — Destructive deletes are documented, not prompted
+- [ADR-0009](adr/0009-states-resolve-strictly.md) — States resolve strictly, not fuzzily
 
 New decisions use [adr/template.md](adr/template.md) (MADR 4.0).
 
