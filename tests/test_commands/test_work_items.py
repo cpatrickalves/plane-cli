@@ -1418,3 +1418,50 @@ class TestWiShow:
         mock_fetch.assert_not_awaited()
         printed = " ".join(str(c.args[0]) for c in mock_console.print.call_args_list)
         assert "failed to load" not in printed
+
+
+class TestStateFilter:
+    """wi ls --state resolves names strictly, per project (ADR-0009)."""
+
+    FE = [{"id": "fe-qa", "name": "em qa"}, {"id": "fe-ready", "name": "pronto p/ qa"}]
+    BE = [{"id": "be-qa", "name": "QA"}, {"id": "be-done", "name": "Done"}]
+
+    def test_exact_name_in_one_project_is_enough(self):
+        from planecli.commands.work_items import _resolve_state_filter
+
+        ids = _resolve_state_filter(["em qa"], {"fe": self.FE, "be": self.BE}, single_project=False)
+        assert ids == {"fe-qa"}
+
+    def test_ambiguous_in_any_project_fails(self):
+        from planecli.commands.work_items import _resolve_state_filter
+        from planecli.exceptions import ValidationError
+
+        with pytest.raises(ValidationError, match="ambiguous"):
+            _resolve_state_filter(["qa"], {"fe": self.FE, "be": self.BE}, single_project=False)
+
+    def test_unknown_everywhere_fails(self):
+        from planecli.commands.work_items import _resolve_state_filter
+        from planecli.exceptions import ValidationError
+
+        with pytest.raises(ValidationError, match="No state matches"):
+            _resolve_state_filter(["review"], {"fe": self.FE, "be": self.BE}, single_project=False)
+
+    def test_missing_in_the_selected_project_fails(self):
+        from planecli.commands.work_items import _resolve_state_filter
+        from planecli.exceptions import ValidationError
+
+        with pytest.raises(ValidationError):
+            _resolve_state_filter(["done"], {"fe": self.FE}, single_project=True)
+
+    def test_partial_match_prints_notice(self, capsys):
+        from planecli.commands.work_items import _resolve_state_filter
+
+        ids = _resolve_state_filter(["pronto"], {"fe": self.FE}, single_project=True)
+        assert ids == {"fe-ready"}
+        assert 'State matched: "pronto" -> "pronto p/ qa"' in capsys.readouterr().err
+
+    def test_state_id_reads_bare_or_expanded_state(self):
+        from planecli.commands.work_items import _state_id
+
+        assert _state_id({"state": "s1"}) == "s1"
+        assert _state_id({"state": {"id": "s2"}}) == "s2"

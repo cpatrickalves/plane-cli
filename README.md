@@ -84,6 +84,7 @@ planecli wi ls
 planecli wi ls -p "Frontend"
 
 # Filter by state and/or labels (comma-separated for OR logic)
+# State names match exactly (case-insensitive) or by a partial name that fits only one state
 planecli wi ls -p "Frontend" --state "In Progress,In Review"
 planecli wi ls -p "Frontend" --labels "bug,critical"
 

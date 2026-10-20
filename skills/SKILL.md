@@ -146,6 +146,9 @@ planecli comment create ABC-123 --body "Fixed in PR #456" --json
 - **`sequence_id` shape differs.** `wi show` / `wi create` return an integer (`204`); `wi ls`
   returns the full identifier as a string (`"PIPERAG-204"`). Build identifiers as
   `sequence_id` from `wi ls`, or `"{project_identifier}-{sequence_id}"` from `wi show`.
+- **State names are strict.** `--state` takes an exact name (case-insensitive) or a partial name
+  that fits only one state (stderr notes `State matched: "x" -> "y"`). Ambiguous or unknown names
+  exit 5 and list the project's states — pick a full name from that list instead of retrying.
 - **`wi show` bundles comments and can degrade to `comments: null`.** `[]` = none, a list = some,
   `null` = the comment fetch failed while the work item still returned and the command exited 0.
   Check for `null` explicitly when "no comments" and "couldn't load comments" differ for you.

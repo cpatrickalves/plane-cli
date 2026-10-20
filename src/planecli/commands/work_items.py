@@ -197,6 +197,49 @@ async def _resolve_project_id_async(project: str | None) -> str:
     return resolved["id"]
 
 
+def _state_id(item: dict) -> str | None:
+    """The state UUID of a work item (bare UUID or expanded object)."""
+    st = item.get("state")
+    return st.get("id") if isinstance(st, dict) else st
+
+
+def _resolve_state_filter(
+    tokens: list[str], project_states: dict[str, list[dict]], *, single_project: bool
+) -> set[str]:
+    """Resolve `wi ls --state` names to state UUIDs, strictly (ADR-0009).
+
+    Each token is matched per project, since every project has its own
+    states. With --project, an unknown or ambiguous name is an error.
+    Across projects, a name that exists in only some projects is fine, but
+    it must match somewhere, and it must not be ambiguous anywhere —
+    silently dropping one project's items is the failure this guards
+    against.
+    """
+    from planecli.formatters import console
+    from planecli.utils.resolve import match_state_name, state_match_error
+
+    ids: set[str] = set()
+    for token in tokens:
+        matched: dict[str, str] = {}  # state id -> name
+        for proj, states in project_states.items():
+            st, candidates = match_state_name(token, states)
+            if st is not None:
+                matched[st["id"]] = st.get("name") or ""
+            elif candidates or single_project:
+                raise state_match_error(token, states, candidates, where=f"project {proj}")
+        if not matched:
+            all_states = [s for states in project_states.values() for s in states]
+            unique = list({s.get("name"): s for s in all_states}.values())
+            raise state_match_error(token, unique, [], where="any project")
+        for name in sorted(set(matched.values())):
+            if name.casefold() != token.casefold():
+                console.print(
+                    f'State matched: "{token}" -> "{name}"', markup=False, highlight=False
+                )
+        ids.update(matched)
+    return ids
+
+
 async def _fetch_project_data(
     client, workspace: str, project_id: str
 ) -> tuple[list[dict], list[dict], list[dict]]:
@@ -235,7 +278,8 @@ async def list_(
     assignee
         Filter by assignee name or 'me'.
     state
-        Filter by state name (comma-separated).
+        Filter by state name (comma-separated). Names match exactly (case
+        insensitive), or by a word or substring that fits only one state.
     labels
         Filter by label name (comma-separated).
     parent
@@ -272,6 +316,7 @@ async def list_(
 
         # Fetch all projects in parallel (each project fetches items+states+labels in parallel)
         data = []
+        project_states: dict[str, list[dict]] = {}
         if projects_to_list:
             # Use fresh client instances for parallel project fetching
             async def _fetch_and_enrich(proj_dict: dict) -> list[dict]:
@@ -282,6 +327,7 @@ async def list_(
                 items, states, labels_list = await _fetch_project_data(
                     proj_client, workspace, project_id
                 )
+                project_states[proj_identifier or project_id] = states
 
                 if not items:
                     return []
@@ -347,17 +393,14 @@ async def list_(
             )
         ]
 
-    # Filter by state (comma-separated, OR logic, substring match)
-    if state:
-        state_tokens = [s.strip().lower() for s in state.split(",") if s.strip()]
+    # Filter by state (comma-separated, OR logic, strict name match)
+    if state is not None:
+        state_tokens = [s.strip() for s in state.split(",") if s.strip()]
         if state_tokens:
-            data = [
-                d for d in data
-                if any(
-                    token in str(d.get("state_detail_name") or "").lower()
-                    for token in state_tokens
-                )
-            ]
+            state_ids = _resolve_state_filter(
+                state_tokens, project_states, single_project=bool(project)
+            )
+            data = [d for d in data if _state_id(d) in state_ids]
 
     # Filter by parent work item
     if parent:
@@ -504,7 +547,8 @@ async def create(
     assignee
         Assignee name, email, or 'me'.
     state
-        State name (e.g. 'Todo', 'In Progress').
+        State name (e.g. 'Todo', 'In Progress') or UUID. A partial name must
+        fit only one state.
     labels
         Comma-separated label names.
     priority
@@ -637,7 +681,7 @@ async def update(
     project
         Project name/ID (required for name-based lookup).
     state
-        New state name.
+        New state name or UUID. A partial name must fit only one state.
     priority
         New priority: urgent, high, medium, low, none.
     assignee
