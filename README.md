@@ -15,6 +15,7 @@ The main differentiator is **intelligent fuzzy search**: reference any resource 
 - **Documents**: Create, read, update, and delete project documents
 - **Intake**: Manage a project's intake queue — list, create, triage (accept/decline), and delete items
 - **Comments**: Add, update, and delete comments on work items
+- **Attachments**: Upload, list, and download work item file attachments
 - **Users**: List workspace members and identify the authenticated user
 - **Fuzzy Search**: Intelligent resource resolution — `--project "Front"` finds "Frontend"
 - **Dual Output**: Rich tables (default) or JSON with `--json` for scripting
@@ -261,6 +262,24 @@ planecli comment update <comment-id> --issue ABC-123 --body "Updated comment"
 planecli comment delete <comment-id> --issue ABC-123
 ```
 
+### Attachments
+
+```bash
+# List a work item's attachments
+planecli attachment ls ABC-123
+
+# Upload a file (asks before adding a second file with the same name; --force skips the check)
+planecli attachment attach ABC-123 -f ./screenshot.png
+
+# Download: the only attachment, one by id or exact file name, or all of them
+planecli attachment get ABC-123
+planecli attachment get ABC-123 3f2a9c1e-...           # by id
+planecli attachment get ABC-123 report.pdf -o ~/report.pdf
+planecli attachment get ABC-123 --all -d ./downloads   # repeated names saved as name-2.ext, ...
+```
+
+A file name shared by several attachments (pasted screenshots are all `image.png`) needs an id, or `--all` to save every match. Existing files in `--dir` are never overwritten unless `--force` is given; `--json` prints the saved paths.
+
 ### Users
 
 ```bash
@@ -288,6 +307,7 @@ planecli --no-cache wi ls -p "Frontend"
 | `planecli work-item` | `wi`, `issues`, `issue` |
 | `planecli project` | `projects` |
 | `planecli comment` | `comments` |
+| `planecli attachment` | `attachments` |
 | `planecli document` | `documents`, `doc`, `docs` |
 | `planecli users` | `user` |
 | `planecli module` | `modules` |

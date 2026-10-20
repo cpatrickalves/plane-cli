@@ -123,6 +123,10 @@ planecli doc create --title "Spec" --content "## Details..." -p "Project" --json
 # Comments
 planecli comment ls ABC-123 --json
 planecli comment create ABC-123 --body "Fixed in PR #456" --json
+
+# Attachments (get saves to disk; a shared name like image.png needs an id or --all)
+planecli attachment ls ABC-123 --json
+planecli attachment get ABC-123 --all -d ./downloads --json
 ```
 
 ## Gotchas

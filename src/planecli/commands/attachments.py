@@ -1,4 +1,4 @@
-"""Work item attachment commands (file upload)."""
+"""Work item attachment commands (upload, list, download)."""
 
 from __future__ import annotations
 
@@ -366,3 +366,213 @@ async def list_(
     items = listed if isinstance(listed, list) else listed.get("results", [])
     data = [_enrich_attachment(a) for a in items]
     output(data, ATTACHMENT_COLUMNS, title=f"Attachments on {issue}", as_json=json)
+
+
+DOWNLOAD_COLUMNS = [
+    ("id", "ID"),
+    ("name", "Name"),
+    ("size", "Size"),
+    ("path", "Saved To"),
+]
+
+
+def _describe(attachments: list[dict]) -> str:
+    """One line per attachment ('id  name') for error messages."""
+    return "\n".join(f"  {a['id']}  {a['name']}" for a in attachments)
+
+
+def _select_attachments(
+    attachments: list[dict], selector: str | None, all_: bool
+) -> list[dict]:
+    """Pick the attachments to download.
+
+    SELECTOR matches an attachment id or its exact file name. Several
+    attachments may share a name (pasted screenshots are all "image.png"),
+    so a name that matches more than one is ambiguous unless --all is given.
+    Without a SELECTOR, --all takes everything and a lone attachment is
+    taken as-is.
+    """
+    if selector is not None:
+        by_id = [a for a in attachments if a.get("id") == selector]
+        if by_id:
+            return by_id
+        by_name = [a for a in attachments if a["name"] == selector]
+        if not by_name:
+            raise ValidationError(
+                f"No attachment matches '{selector}'.",
+                hint="Available attachments:\n" + _describe(attachments)
+                if attachments
+                else "The work item has no attachments.",
+            )
+        if len(by_name) > 1 and not all_:
+            raise ValidationError(
+                f"{len(by_name)} attachments are named '{selector}'.",
+                hint="Pass one id, or --all to save them all:\n" + _describe(by_name),
+            )
+        return by_name
+
+    if not attachments:
+        raise ValidationError("The work item has no attachments.")
+    if all_ or len(attachments) == 1:
+        return attachments
+    raise ValidationError(
+        f"The work item has {len(attachments)} attachments; choose one.",
+        hint="Pass an id or file name, or --all to save them all:\n"
+        + _describe(attachments),
+    )
+
+
+def _safe_filename(name: str, fallback: str) -> str:
+    """Reduce an attachment name to a bare file name (no directories)."""
+    base = os.path.basename(name.replace("\\", "/")).strip()
+    return base if base not in ("", ".", "..") else fallback
+
+
+def _plan_paths(selected: list[dict], directory: Path, overwrite: bool) -> list[Path]:
+    """Choose a target path per attachment, suffixing duplicate names.
+
+    Names repeated within the batch become name-2.ext, name-3.ext, ...; an
+    existing file on disk is sidestepped the same way unless overwrite is set.
+    """
+    taken: set[Path] = set()
+    paths: list[Path] = []
+    for att in selected:
+        name = _safe_filename(att["name"], att["id"])
+        stem, suffix = os.path.splitext(name)
+        candidate = directory / name
+        n = 1
+        while candidate in taken or (not overwrite and candidate.exists()):
+            n += 1
+            candidate = directory / f"{stem}-{n}{suffix}"
+        taken.add(candidate)
+        paths.append(candidate)
+    return paths
+
+
+def _download_attachment(url: str, api_key: str, dest: Path) -> int:
+    """Stream one attachment to dest; return the bytes written.
+
+    The detail endpoint answers with a redirect to a presigned storage URL.
+    The redirect is followed by hand so the API key is not sent to the
+    storage host — the signature lives in the URL. Bytes go to a .part file
+    that is renamed on success, so a failed download leaves no partial file.
+    """
+    from urllib.parse import urljoin
+
+    import requests
+
+    resp = requests.get(
+        url, headers={"X-Api-Key": api_key}, allow_redirects=False, stream=True, timeout=60
+    )
+    if resp.is_redirect:
+        location = urljoin(url, resp.headers["Location"])
+        resp.close()
+        resp = requests.get(location, stream=True, timeout=60)
+    if resp.status_code == 401:
+        from planecli.exceptions import AuthenticationError
+
+        raise AuthenticationError()
+    if resp.status_code != 200:
+        raise APIError(f"Download failed: HTTP {resp.status_code}", status_code=resp.status_code)
+
+    part = dest.with_name(dest.name + ".part")
+    written = 0
+    try:
+        with resp, open(part, "wb") as fh:
+            for chunk in resp.iter_content(chunk_size=64 * 1024):
+                fh.write(chunk)
+                written += len(chunk)
+        part.replace(dest)
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
+    return written
+
+
+@attachment_app.command(name="get", alias=["download", "dl"])
+async def get(
+    issue: str,
+    selector: str | None = None,
+    *,
+    all_: Annotated[bool, Parameter(name="--all")] = False,
+    dir: Annotated[str | None, Parameter(alias="-d")] = None,
+    output_file: Annotated[str | None, Parameter(name=["--output", "-o"])] = None,
+    force: bool = False,
+    project: Annotated[str | None, Parameter(alias="-p")] = None,
+    json: bool = False,
+) -> None:
+    """Download work item attachments to disk.
+
+    Parameters
+    ----------
+    issue
+        Work item identifier (ABC-123) or UUID.
+    selector
+        Attachment id or exact file name. Optional when the work item has a
+        single attachment or --all is given.
+    all_
+        Download every attachment (or every one named SELECTOR). Repeated
+        file names are saved as name-2.ext, name-3.ext, ...
+    dir
+        Directory to save into (default: the current directory).
+    output_file
+        File path to save a single attachment to (overwrites).
+    force
+        Overwrite existing files in --dir instead of adding a numeric suffix.
+    project
+        Project name/ID (required for name-based lookup).
+    """
+    from planecli.api.client import get_config
+
+    if output_file is not None and dir is not None:
+        raise ValidationError("Use either --output or --dir, not both.")
+    directory = Path(os.path.expanduser(dir)) if dir is not None else Path.cwd()
+    if not directory.is_dir():
+        raise ValidationError(f"Directory not found: {directory}")
+
+    try:
+        item, project_id = await _resolve_item(issue, project)
+        client = get_client()
+        workspace = get_workspace()
+        endpoint = (
+            f"{workspace}/projects/{project_id}/work-items/{item['id']}/attachments"
+        )
+        listed = await run_sdk(client.work_items.attachments._get, endpoint)
+    except PlaneError as e:
+        raise handle_api_error(e)
+
+    items = listed if isinstance(listed, list) else listed.get("results", [])
+    attachments = [_enrich_attachment(a) for a in items if not a.get("is_deleted")]
+    selected = _select_attachments(attachments, selector, all_)
+
+    if output_file is not None:
+        if len(selected) > 1:
+            raise ValidationError(
+                f"--output takes a single attachment, but {len(selected)} were selected.",
+                hint="Use --dir to save several files.",
+            )
+        paths = [Path(os.path.expanduser(output_file))]
+    else:
+        paths = _plan_paths(selected, directory, overwrite=force)
+
+    # NOTE: raw requests + X-Api-Key, same pattern as documents.py — the SDK
+    # has no download method, and its session would carry the API key across
+    # the storage redirect (see ADR-0003).
+    cfg = get_config()
+    base = f"{cfg.base_url}/api/v1/workspaces/{endpoint}"
+    saved = []
+    for att, path in zip(selected, paths):
+        written = await run_sdk(
+            _download_attachment, f"{base}/{att['id']}/", cfg.api_key, path
+        )
+        saved.append(
+            {
+                "id": att["id"],
+                "name": att["name"],
+                "type": att["type"],
+                "size": written,
+                "path": str(path.resolve()),
+            }
+        )
+
+    output(saved, DOWNLOAD_COLUMNS, title=f"Downloaded from {issue}", as_json=json)

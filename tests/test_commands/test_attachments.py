@@ -267,3 +267,183 @@ async def test_upload_embed_image_raises_when_not_confirmed(mock_run, mock_cfg):
         pytest.raises(APIError),
     ):
         await upload_embed_image(None, "ws", "p1", "i1", "x.png")
+
+
+# ---------------------------------------------------------------------------
+# attachment get (download)
+# ---------------------------------------------------------------------------
+
+
+def _att(att_id: str, name: str) -> dict:
+    return {"id": att_id, "name": name, "type": "image/png"}
+
+
+SHOTS = [_att("a1", "image.png"), _att("a2", "image.png"), _att("a3", "notes.md")]
+
+
+def test_select_by_id_wins_over_name():
+    from planecli.commands.attachments import _select_attachments
+
+    assert _select_attachments(SHOTS, "a2", False) == [SHOTS[1]]
+
+
+def test_select_by_unique_name():
+    from planecli.commands.attachments import _select_attachments
+
+    assert _select_attachments(SHOTS, "notes.md", False) == [SHOTS[2]]
+
+
+def test_select_shared_name_requires_id_or_all():
+    from planecli.commands.attachments import _select_attachments
+    from planecli.exceptions import ValidationError
+
+    with pytest.raises(ValidationError, match="2 attachments are named") as exc:
+        _select_attachments(SHOTS, "image.png", False)
+    # the hint lists the ids to choose from
+    assert "a1" in exc.value.hint and "a2" in exc.value.hint
+    assert _select_attachments(SHOTS, "image.png", True) == SHOTS[:2]
+
+
+def test_select_unknown_selector_lists_attachments():
+    from planecli.commands.attachments import _select_attachments
+    from planecli.exceptions import ValidationError
+
+    with pytest.raises(ValidationError, match="No attachment matches") as exc:
+        _select_attachments(SHOTS, "missing.png", False)
+    assert "notes.md" in exc.value.hint
+
+
+def test_select_without_selector():
+    from planecli.commands.attachments import _select_attachments
+    from planecli.exceptions import ValidationError
+
+    assert _select_attachments(SHOTS[:1], None, False) == SHOTS[:1]
+    assert _select_attachments(SHOTS, None, True) == SHOTS
+    with pytest.raises(ValidationError, match="choose one"):
+        _select_attachments(SHOTS, None, False)
+    with pytest.raises(ValidationError, match="no attachments"):
+        _select_attachments([], None, True)
+
+
+def test_plan_paths_suffixes_duplicates_and_existing_files(tmp_path):
+    from planecli.commands.attachments import _plan_paths
+
+    (tmp_path / "notes.md").write_text("already here")
+    paths = _plan_paths(SHOTS, tmp_path, overwrite=False)
+    assert [p.name for p in paths] == ["image.png", "image-2.png", "notes-2.md"]
+
+
+def test_plan_paths_overwrite_keeps_existing_name(tmp_path):
+    from planecli.commands.attachments import _plan_paths
+
+    (tmp_path / "notes.md").write_text("already here")
+    paths = _plan_paths(SHOTS, tmp_path, overwrite=True)
+    assert [p.name for p in paths] == ["image.png", "image-2.png", "notes.md"]
+
+
+def test_plan_paths_strips_directories_from_names(tmp_path):
+    from planecli.commands.attachments import _plan_paths
+
+    paths = _plan_paths([_att("a1", "../../etc/passwd"), _att("a2", "")], tmp_path, False)
+    assert paths == [tmp_path / "passwd", tmp_path / "a2"]
+
+
+def _http(status: int, headers: dict | None = None, chunks: list[bytes] | None = None):
+    m = MagicMock(status_code=status, headers=headers or {})
+    m.is_redirect = 300 <= status < 400
+    m.iter_content.return_value = chunks or []
+    m.__enter__.return_value = m
+    return m
+
+
+def test_download_follows_redirect_without_api_key(tmp_path):
+    from planecli.commands.attachments import _download_attachment
+
+    redirect = _http(302, {"Location": "/uploads/obj?sig=1"})
+    body = _http(200, chunks=[b"abc", b"de"])
+    with patch("requests.get", side_effect=[redirect, body]) as mock_get:
+        written = _download_attachment(
+            "http://plane.local/api/v1/workspaces/ws/x/a1/", "secret", tmp_path / "f.png"
+        )
+
+    assert written == 5
+    assert (tmp_path / "f.png").read_bytes() == b"abcde"
+    first, second = mock_get.call_args_list
+    assert first.kwargs["headers"] == {"X-Api-Key": "secret"}
+    assert first.kwargs["allow_redirects"] is False
+    # relative Location resolved against the API host; no key sent to storage
+    assert second.args[0] == "http://plane.local/uploads/obj?sig=1"
+    assert "headers" not in second.kwargs
+
+
+def test_download_error_leaves_no_partial_file(tmp_path):
+    from planecli.commands.attachments import _download_attachment
+    from planecli.exceptions import APIError
+
+    with patch("requests.get", return_value=_http(400)), pytest.raises(APIError):
+        _download_attachment("http://plane.local/a/", "k", tmp_path / "f.png")
+
+    body = _http(200)
+    body.iter_content.side_effect = OSError("connection reset")
+    with patch("requests.get", return_value=body), pytest.raises(OSError):
+        _download_attachment("http://plane.local/a/", "k", tmp_path / "f.png")
+    assert list(tmp_path.iterdir()) == []
+
+
+@patch("planecli.commands.attachments.get_workspace", return_value="ws")
+@patch("planecli.commands.attachments.get_client")
+@patch("planecli.commands.attachments._resolve_item", new_callable=AsyncMock)
+@patch("planecli.commands.attachments.run_sdk", new_callable=AsyncMock)
+async def test_get_all_downloads_each_selected_attachment(
+    mock_run, mock_resolve, _client, _ws, tmp_path, capsys
+):
+    import json as jsonlib
+
+    from planecli.commands.attachments import get
+
+    mock_resolve.return_value = ({"id": "item-1"}, "proj-1")
+    listed = [
+        {"id": "a1", "attributes": {"name": "image.png", "type": "image/png"}},
+        {"id": "a2", "attributes": {"name": "image.png", "type": "image/png"}},
+        {"id": "a3", "attributes": {"name": "old.png"}, "is_deleted": True},
+    ]
+    mock_run.side_effect = [listed, 10, 20]
+
+    with patch(
+        "planecli.api.client.get_config",
+        return_value=MagicMock(base_url="http://plane.local", api_key="k"),
+    ):
+        await get("ABC-1", "image.png", all_=True, dir=str(tmp_path), json=True)
+
+    out = jsonlib.loads(capsys.readouterr().out)
+    assert [(o["id"], o["size"]) for o in out] == [("a1", 10), ("a2", 20)]
+    assert [o["path"].rsplit("/", 1)[1] for o in out] == ["image.png", "image-2.png"]
+    url = mock_run.call_args_list[1].args[1]
+    assert url == (
+        "http://plane.local/api/v1/workspaces/ws/projects/proj-1/"
+        "work-items/item-1/attachments/a1/"
+    )
+
+
+@patch("planecli.commands.attachments.get_workspace", return_value="ws")
+@patch("planecli.commands.attachments.get_client")
+@patch("planecli.commands.attachments._resolve_item", new_callable=AsyncMock)
+@patch("planecli.commands.attachments.run_sdk", new_callable=AsyncMock)
+async def test_get_output_rejects_several_attachments(mock_run, mock_resolve, _client, _ws):
+    from planecli.commands.attachments import get
+    from planecli.exceptions import ValidationError
+
+    mock_resolve.return_value = ({"id": "item-1"}, "proj-1")
+    mock_run.side_effect = [
+        [{"id": "a1", "attributes": {"name": "x"}}, {"id": "a2", "attributes": {"name": "y"}}]
+    ]
+    with pytest.raises(ValidationError, match="--output takes a single"):
+        await get("ABC-1", all_=True, output_file="out.bin")
+
+
+async def test_get_rejects_output_with_dir():
+    from planecli.commands.attachments import get
+    from planecli.exceptions import ValidationError
+
+    with pytest.raises(ValidationError, match="not both"):
+        await get("ABC-1", output_file="a", dir=".")
