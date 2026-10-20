@@ -451,6 +451,8 @@ async def show(
     member_map: dict[str, str] = {}
     label_map: dict[str, dict[str, str | None]] = {}
     if data.get("project"):
+        from planecli.exceptions import PlaneCLIError
+
         try:
             from planecli.cache import (
                 cached_list_labels,
@@ -486,7 +488,7 @@ async def show(
                 for lb in labels_list
                 if lb.get("id") and lb.get("name")
             }
-        except PlaneError:
+        except (PlaneError, PlaneCLIError):
             pass
 
     data = _enrich_work_item(
