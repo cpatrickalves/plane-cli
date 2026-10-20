@@ -633,3 +633,18 @@ async def resolve_label_async(
         return match.item
 
     raise ResourceNotFoundError("Label", name)
+
+
+async def resolve_work_item_and_project_async(
+    issue: str, project: str | None, client: PlaneClient, workspace: str
+) -> tuple[dict[str, Any], str]:
+    """Resolve a work item to (item_dict, project_id), with or without -p.
+
+    With a project, names resolve inside it; without one, only identifiers
+    (ABC-123) and UUIDs resolve, across all projects.
+    """
+    if project:
+        proj = await resolve_project_async(project, client, workspace)
+        item = await resolve_work_item_async(issue, client, workspace, proj["id"])
+        return item, proj["id"]
+    return await resolve_work_item_across_projects_async(issue, client, workspace)

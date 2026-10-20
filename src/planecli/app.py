@@ -24,8 +24,10 @@ from planecli.commands.cycles import cycle_app  # noqa: E402
 from planecli.commands.documents import doc_app  # noqa: E402
 from planecli.commands.intake import intake_app  # noqa: E402
 from planecli.commands.labels import label_app  # noqa: E402
+from planecli.commands.links import link_app  # noqa: E402
 from planecli.commands.modules import module_app  # noqa: E402
 from planecli.commands.projects import project_app  # noqa: E402
+from planecli.commands.relations import relation_app  # noqa: E402
 from planecli.commands.states import state_app  # noqa: E402
 from planecli.commands.users import user_app  # noqa: E402
 from planecli.commands.work_items import wi_app  # noqa: E402
@@ -33,6 +35,8 @@ from planecli.commands.work_items import wi_app  # noqa: E402
 app.command(project_app)
 app.command(wi_app)
 app.command(comment_app)
+app.command(link_app)
+app.command(relation_app)
 app.command(doc_app)
 app.command(intake_app)
 app.command(user_app)

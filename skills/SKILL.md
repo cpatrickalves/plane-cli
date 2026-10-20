@@ -123,6 +123,11 @@ planecli doc create --title "Spec" --content "## Details..." -p "Project" --json
 # Comments
 planecli comment ls ABC-123 --json
 planecli comment create ABC-123 --body "Fixed in PR #456" --json
+
+# Links and relations (relation add reads as a sentence: ABC-123 blocks ABC-124)
+planecli link add ABC-123 https://github.com/org/repo/pull/42 --title "PR #42" --json
+planecli relation add ABC-123 blocking ABC-124 --json
+planecli relation ls ABC-123 --json
 ```
 
 ## Gotchas
@@ -146,10 +151,14 @@ planecli comment create ABC-123 --body "Fixed in PR #456" --json
 - **`sequence_id` shape differs.** `wi show` / `wi create` return an integer (`204`); `wi ls`
   returns the full identifier as a string (`"PIPERAG-204"`). Build identifiers as
   `sequence_id` from `wi ls`, or `"{project_identifier}-{sequence_id}"` from `wi show`.
+- **Relations may be impossible to undo via the API.** Self-hosted Plane up to v1.4.2 has no
+  endpoint for removing a relation (`relation remove` exits 4); only the web app can. Add
+  relations deliberately.
 - **`wi show` bundles comments and can degrade to `comments: null`.** `[]` = none, a list = some,
   `null` = the comment fetch failed while the work item still returned and the command exited 0.
   Check for `null` explicitly when "no comments" and "couldn't load comments" differ for you.
-  `--no-comments` omits the key entirely.
+  `--no-comments` omits the key entirely. `links` and `relations` follow the same rules
+  (`--no-links`, `--no-relations`).
 
 ## Bulk create with rich descriptions
 

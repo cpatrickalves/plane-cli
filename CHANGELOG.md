@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `planecli link` (`ls`, `add`, `delete`) manages the URLs linked to a work item; `delete` takes the link id or the exact URL. `planecli relation` (`ls`, `add`, `remove`) manages relations between work items: `relation add ISSUE TYPE TARGET...` with types `blocking`, `blocked_by`, `duplicate`, `relates_to`, `start_before`, `start_after`, `finish_before`, `finish_after`, targets as identifiers (`ABC-123`) or UUIDs. Created links and relations are verified against the server. Self-hosted Plane up to v1.4.2 exposes no API endpoint for removing relations; `relation remove` then fails with a clear error
+- `wi show` also fetches the work item's links and relations, in parallel with the comments. In `--json`, `links` and `relations` are lists, or `null` if that fetch fails (the command still exits 0); each relation carries `relation_type`, `issue_id`, `project_id`, `identifier` and `name`. `--no-links` / `--no-relations` skip the fetches
 - `planecli intake` command group: `ls`, `create`, `accept`, `decline`, `delete`, `enabled` for project intake queues. Mutations take the work item UUID shown in the `Issue ID` column of `intake ls`. `accept`/`decline` require the project Admin role (the API silently ignores the change for lower roles, so the CLI verifies it and fails loudly). `delete` also permanently deletes the underlying work item for any status other than `accepted`
 
 ## [0.5.1] - 2026-07-03

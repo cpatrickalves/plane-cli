@@ -1178,6 +1178,22 @@ class TestWiFields:
 class TestWiShow:
     """Tests for the wi show command (with bundled comments)."""
 
+    @pytest.fixture(autouse=True)
+    def _no_links_or_relations(self):
+        # Links and relations are fetched alongside comments; keep them empty
+        # here so these tests exercise the comment behaviour only.
+        with (
+            patch("planecli.commands.links.fetch_issue_links", new_callable=AsyncMock) as links,
+            patch(
+                "planecli.commands.relations.fetch_issue_relations", new_callable=AsyncMock
+            ) as relations,
+            patch("planecli.commands.work_items.create_client"),
+        ):
+            links.return_value = []
+            relations.return_value = []
+            self.mock_links, self.mock_relations = links, relations
+            yield
+
     def _resolved_item(self):
         return {
             "id": "item-1",
@@ -1304,6 +1320,58 @@ class TestWiShow:
         mock_fetch.assert_not_awaited()
         data = mock_out.call_args[0][0]
         assert "comments" not in data
+
+    @patch("planecli.commands.work_items.output_single")
+    @patch("planecli.commands.comments.fetch_issue_comments", new_callable=AsyncMock)
+    @patch("planecli.commands.work_items.run_sdk", new_callable=AsyncMock)
+    @patch(
+        "planecli.commands.work_items.resolve_work_item_across_projects_async",
+        new_callable=AsyncMock,
+    )
+    @patch("planecli.commands.work_items.get_workspace", return_value="ws")
+    @patch("planecli.commands.work_items.get_client")
+    async def test_show_includes_links_and_relations(
+        self, mock_client, mock_ws, mock_resolve, mock_run_sdk, mock_fetch, mock_out
+    ):
+        from planecli.commands.work_items import show
+
+        mock_resolve.return_value = (self._resolved_item(), "p1")
+        mock_run_sdk.return_value = {"estimate_point": None}
+        mock_fetch.return_value = []
+        self.mock_links.return_value = [{"id": "l1", "url": "https://x.io"}]
+        self.mock_relations.side_effect = _make_http_error(503, "unavailable")
+
+        await show("ABC-7", json=True)  # a failed relation fetch must NOT raise
+
+        data = mock_out.call_args[0][0]
+        assert data["links"] == [{"id": "l1", "url": "https://x.io"}]
+        assert data["relations"] is None
+        assert data["comments"] == []
+
+    @patch("planecli.commands.work_items.output_single")
+    @patch("planecli.commands.comments.fetch_issue_comments", new_callable=AsyncMock)
+    @patch("planecli.commands.work_items.run_sdk", new_callable=AsyncMock)
+    @patch(
+        "planecli.commands.work_items.resolve_work_item_across_projects_async",
+        new_callable=AsyncMock,
+    )
+    @patch("planecli.commands.work_items.get_workspace", return_value="ws")
+    @patch("planecli.commands.work_items.get_client")
+    async def test_show_no_links_no_relations_skip_fetches(
+        self, mock_client, mock_ws, mock_resolve, mock_run_sdk, mock_fetch, mock_out
+    ):
+        from planecli.commands.work_items import show
+
+        mock_resolve.return_value = (self._resolved_item(), "p1")
+        mock_run_sdk.return_value = {"estimate_point": None}
+        mock_fetch.return_value = []
+
+        await show("ABC-7", json=True, no_links=True, no_relations=True)
+
+        self.mock_links.assert_not_awaited()
+        self.mock_relations.assert_not_awaited()
+        data = mock_out.call_args[0][0]
+        assert "links" not in data and "relations" not in data
 
     @patch("planecli.commands.work_items.output")
     @patch("planecli.commands.work_items.output_single")
