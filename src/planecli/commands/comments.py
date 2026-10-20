@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import html
 import re
-from typing import Annotated
+from typing import Annotated, Literal
 
 import cyclopts
 from cyclopts import Parameter
@@ -27,9 +27,21 @@ comment_app = cyclopts.App(
 COMMENT_COLUMNS = [
     ("id", "ID"),
     ("actor_name", "Author"),
-    ("body_text", "Comment"),
+    ("body_markdown", "Comment"),
     ("created_at", "Created"),
 ]
+
+BodyFormat = Literal["markdown", "html"]
+
+
+def comment_columns(fmt: BodyFormat = "markdown") -> list[tuple[str, str]]:
+    """Table columns showing the comment body as Markdown or raw HTML."""
+    if fmt == "html":
+        return [
+            ("comment_html" if key == "body_markdown" else key, label)
+            for key, label in COMMENT_COLUMNS
+        ]
+    return COMMENT_COLUMNS
 
 
 _URL_RE = re.compile(r"(?<![\"'>=])(https?://[A-Za-z0-9\-._~:/?#\[\]@!$&()*+,;=%]+)")
@@ -126,14 +138,17 @@ def _enrich_comment(data: dict, members_map: dict[str, str] | None = None) -> di
         resolved = members_map.get(actor) if members_map else None
         data["actor_name"] = resolved or (str(actor) if actor else "")
 
-    # Strip HTML from comment body
+    # body_text (tags stripped) is kept for existing --json consumers;
+    # body_markdown keeps paragraphs, lists, links and images readable.
     body_html = data.get("comment_html") or ""
     if body_html:
-        import re
+        from planecli.utils.html_markdown import html_to_markdown
 
         data["body_text"] = re.sub(r"<[^>]+>", "", body_html).strip()
+        data["body_markdown"] = html_to_markdown(body_html)
     else:
         data["body_text"] = ""
+        data["body_markdown"] = ""
 
     return data
 
@@ -173,6 +188,7 @@ async def list_(
     *,
     project: Annotated[str | None, Parameter(alias="-p")] = None,
     limit: Annotated[int, Parameter(alias="-l")] = 50,
+    format: BodyFormat = "markdown",
     json: bool = False,
 ) -> None:
     """List comments on a work item.
@@ -185,6 +201,9 @@ async def list_(
         Project name/ID (required for name-based lookup).
     limit
         Maximum comments to show (the most recent N).
+    format
+        How the table shows comment bodies: markdown (default) or the raw
+        editor html. JSON always carries comment_html and body_markdown.
     """
     try:
         client = get_client()
@@ -211,7 +230,7 @@ async def list_(
     # `data[:limit]`, where limit=0 already yields an empty list).
     n = max(limit, 0)
     data = comments[-n:] if n else []
-    output(data, COMMENT_COLUMNS, title=f"Comments on {issue}", as_json=json)
+    output(data, comment_columns(format), title=f"Comments on {issue}", as_json=json)
 
 
 @comment_app.command(alias="new")

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Annotated
+from typing import Annotated, Literal
 
 import cyclopts
 from cyclopts import Parameter
@@ -45,7 +45,7 @@ WI_FIELDS = [
     ("id", "UUID"),
     ("sequence_id", "Sequence ID"),
     ("name", "Title"),
-    ("description_stripped", "Description"),
+    ("description_markdown", "Description"),
     ("priority", "Priority"),
     ("state_detail_name", "State"),
     ("assignee_names", "Assignees"),
@@ -180,6 +180,31 @@ def _enrich_work_item(
         data["estimate_display"] = ""
 
     return data
+
+
+DescriptionFormat = Literal["markdown", "html"]
+
+
+def _add_description_markdown(data: dict) -> dict:
+    """Add description_markdown: the editor HTML converted for reading.
+
+    Kept out of _enrich_work_item so `wi ls` does not convert the
+    description of every listed item.
+    """
+    from planecli.utils.html_markdown import html_to_markdown
+
+    data["description_markdown"] = html_to_markdown(data.get("description_html"))
+    return data
+
+
+def _wi_fields(fmt: DescriptionFormat = "markdown") -> list[tuple[str, str]]:
+    """Detail fields showing the description as Markdown or raw HTML."""
+    if fmt == "html":
+        return [
+            ("description_html" if key == "description_markdown" else key, label)
+            for key, label in WI_FIELDS
+        ]
+    return WI_FIELDS
 
 
 async def _resolve_project_id_async(project: str | None) -> str:
@@ -409,6 +434,7 @@ async def show(
     project: Annotated[str | None, Parameter(alias="-p")] = None,
     json: bool = False,
     no_comments: bool = False,
+    format: DescriptionFormat = "markdown",
 ) -> None:
     """Show work item details.
 
@@ -420,6 +446,10 @@ async def show(
         Project name/ID (required for name-based lookup).
     no_comments
         Skip fetching the work item's comments.
+    format
+        How the table shows the description and comments: markdown (default)
+        or the raw editor html. JSON always carries description_html and
+        description_markdown.
     """
     try:
         client = get_client()
@@ -497,6 +527,7 @@ async def show(
         member_map=member_map,
         label_map=label_map,
     )
+    _add_description_markdown(data)
 
     # Comments are a SECONDARY enrichment: fetched in their own block OUTSIDE the
     # resolve/estimate try above, so a comment API failure degrades to null
@@ -512,18 +543,18 @@ async def show(
             logger.warning("Failed to fetch comments: {}", exc)
             data["comments"] = None  # signal failure, do NOT abort
 
-    output_single(data, WI_FIELDS, title="Work Item Details", as_json=json)
+    output_single(data, _wi_fields(format), title="Work Item Details", as_json=json)
 
     # Human-readable Comments section (non-JSON only, so stdout stays clean under --json).
     # Gated on the same id/project check as the fetch above, so we only ever
     # render "(failed to load)" when a fetch was actually attempted and failed.
     if not json and not no_comments and data.get("id") and data.get("project"):
-        from planecli.commands.comments import COMMENT_COLUMNS
+        from planecli.commands.comments import comment_columns
         from planecli.formatters import console
 
         comments = data.get("comments")
         if comments:
-            output(comments, COMMENT_COLUMNS, title="Comments")
+            output(comments, comment_columns(format), title="Comments")
         elif comments == []:
             console.print("Comments: (none)")
         else:  # None -> fetch failed
@@ -662,7 +693,9 @@ async def create(
     except PlaneError as e:
         raise handle_api_error(e)
 
-    output_single(data, WI_FIELDS, title="Work Item Created", as_json=json)
+    output_single(
+        _add_description_markdown(data), WI_FIELDS, title="Work Item Created", as_json=json
+    )
 
 
 @wi_app.command
@@ -788,7 +821,9 @@ async def update(
     except PlaneError as e:
         raise handle_api_error(e)
 
-    output_single(data, WI_FIELDS, title="Work Item Updated", as_json=json)
+    output_single(
+        _add_description_markdown(data), WI_FIELDS, title="Work Item Updated", as_json=json
+    )
 
 
 @wi_app.command

@@ -76,3 +76,4 @@ New decisions use [adr/template.md](adr/template.md) (MADR 4.0).
 | [cashews](https://github.com/Krukov/cashews) | Disk-based response cache |
 | [tenacity](https://tenacity.readthedocs.io/) | Retry on transient errors |
 | [Rich](https://rich.readthedocs.io/) | Table rendering |
+| [markdownify](https://github.com/matthewwithanm/python-markdownify) | Editor HTML to Markdown for display (`utils/html_markdown.py`) |

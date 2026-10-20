@@ -330,3 +330,17 @@ async def test_comment_delete_invalidates_cache(
     await delete("comment-1", issue="ABC-1")
 
     mock_invalidate.assert_awaited_once_with("comments", "ws", "p1", "item-1")
+
+
+def test_enrich_comment_adds_markdown_body():
+    result = _enrich_comment({"actor": "u", "comment_html": "<p>a</p><ul><li><p>b</p></li></ul>"})
+    assert result["body_markdown"] == "a\n\n- b"
+    assert result["body_text"] == "ab"  # unchanged for existing --json consumers
+
+
+def test_comment_columns_html_swaps_body_column():
+    from planecli.commands.comments import COMMENT_COLUMNS, comment_columns
+
+    assert comment_columns() == COMMENT_COLUMNS
+    keys = [k for k, _ in comment_columns("html")]
+    assert "comment_html" in keys and "body_markdown" not in keys

@@ -18,6 +18,9 @@ def _format_value(value: Any) -> str | Text:
     """Format a value for table display, prettifying timestamps.
 
     Rich Text objects are passed through unchanged to preserve color styling.
+    Everything else becomes plain Text: values are user data, and as a str
+    Rich would read brackets as markup and drop them (a task-list "[x]" or
+    "[ ]" would vanish from a description).
     """
     if isinstance(value, Text):
         return value
@@ -27,7 +30,12 @@ def _format_value(value: Any) -> str | Text:
     # ISO timestamp like "2026-02-08T12:26:34.340901Z" -> "2026-02-08 12:26:34"
     if len(s) >= 20 and s[10:11] == "T" and s.endswith("Z"):
         return s[:19].replace("T", " ")
-    return s
+    # Long prose (descriptions, comments) folds so URLs stay whole instead
+    # of being cut with an ellipsis; short values such as ids keep the
+    # table's default overflow.
+    if "\n" in s or len(s) > 80:
+        return Text(s, overflow="fold")
+    return Text(s)
 
 
 def output(
