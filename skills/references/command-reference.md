@@ -74,6 +74,7 @@ planecli wi show ISSUE [OPTIONS]
 | `ISSUE` | Work item identifier (ABC-123), UUID, or name (required) |
 | `--project` / `-p` | Project (required for name-based lookup) |
 | `--no-comments` | Skip fetching the work item's comments |
+| `--format` | `markdown` (default) or `html`: how the table shows the description and comments |
 | `--json` | JSON output |
 
 Bundles the work item's comments in the same call (chronological, oldest → newest;
@@ -83,6 +84,10 @@ itself still returns and the command still exits 0. In human output, a `Comments
 section follows the work item details, showing `(none)` or `(failed to load)` as
 appropriate. Pass `--no-comments` to skip the fetch entirely (the `comments` key is
 then omitted from JSON output).
+
+The description is shown as Markdown (task lists as `- [x]`, images as `![alt](src)`).
+`--json` carries the raw `description_html` plus `description_markdown`; each comment
+carries `comment_html` plus `body_markdown`.
 
 ### wi create
 
@@ -283,7 +288,7 @@ planecli doc delete TITLE -p PROJECT
 Command group: `planecli comment` (alias: `comments`)
 
 ```
-planecli comment ls ISSUE [--project/-p PROJECT] [--limit/-l N]
+planecli comment ls ISSUE [--project/-p PROJECT] [--limit/-l N] [--format markdown|html]
 planecli comment create ISSUE --body "TEXT" [--project/-p PROJECT]
 planecli comment update COMMENT_ID --issue ISSUE --body "TEXT" [--project/-p PROJECT]
 planecli comment delete COMMENT_ID --issue ISSUE [--project/-p PROJECT]

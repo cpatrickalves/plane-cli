@@ -93,6 +93,7 @@ planecli wi ls -p "Frontend" --sort updated --limit 10
 # Show a specific work item (by identifier or name); also bundles its comments
 planecli wi show ABC-123
 planecli wi show ABC-123 --no-comments   # skip the comment fetch
+planecli wi show ABC-123 --format html   # raw editor HTML instead of Markdown
 
 # Create a work item
 planecli wi create "Fix login timeout" -p "Frontend" --assign me --priority urgent
@@ -248,7 +249,7 @@ planecli intake enabled Frontend --json
 ### Comments
 
 ```bash
-# List comments on a work item
+# List comments on a work item (bodies shown as Markdown; --format html for the raw HTML)
 planecli comment ls ABC-123
 
 # Add a comment

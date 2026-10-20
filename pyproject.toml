@@ -27,6 +27,7 @@ dependencies = [
     "cashews[diskcache]>=7.0",
     "tenacity>=8.0",
     "loguru>=0.7",
+    "markdownify>=1.2.3",
 ]
 
 [project.scripts]

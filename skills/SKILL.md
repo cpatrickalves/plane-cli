@@ -53,6 +53,7 @@ planecli wi update ABC-123 --assign "Patrick" --labels "bug,urgent" --json
 # Other
 planecli wi show ABC-123 --json                     # bundles comments (see Gotchas)
 planecli wi show ABC-123 --no-comments --json       # skip the comment fetch
+planecli wi show ABC-123 --json | jq -r .description_markdown   # readable description
 planecli wi assign ABC-123 --json                   # assign to yourself
 planecli wi assign ABC-123 --assign "Name" --json
 planecli wi search "login bug" -p "Project" --json

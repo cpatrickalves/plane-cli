@@ -1305,6 +1305,54 @@ class TestWiShow:
         data = mock_out.call_args[0][0]
         assert "comments" not in data
 
+    @patch("planecli.commands.work_items.output_single")
+    @patch("planecli.commands.work_items.run_sdk", new_callable=AsyncMock)
+    @patch(
+        "planecli.commands.work_items.resolve_work_item_across_projects_async",
+        new_callable=AsyncMock,
+    )
+    @patch("planecli.commands.work_items.get_workspace", return_value="ws")
+    @patch("planecli.commands.work_items.get_client")
+    async def test_show_adds_markdown_description_and_keeps_html(
+        self, mock_client, mock_ws, mock_resolve, mock_run_sdk, mock_out
+    ):
+        from planecli.commands.work_items import show
+
+        item = self._resolved_item()
+        item["description_html"] = "<p>one<br>two</p><ul><li><p>x</p></li></ul>"
+        mock_resolve.return_value = (item, "p1")
+        mock_run_sdk.return_value = {"estimate_point": None}
+
+        await show("ABC-7", json=True, no_comments=True)
+
+        data, fields = mock_out.call_args[0][:2]
+        assert data["description_markdown"] == "one  \ntwo\n\n- x"
+        assert data["description_html"] == item["description_html"]  # raw, unchanged
+        assert data["description_stripped"] == "onetwox"  # kept for compatibility
+        assert ("description_markdown", "Description") in fields
+
+    @patch("planecli.commands.work_items.output_single")
+    @patch("planecli.commands.work_items.run_sdk", new_callable=AsyncMock)
+    @patch(
+        "planecli.commands.work_items.resolve_work_item_across_projects_async",
+        new_callable=AsyncMock,
+    )
+    @patch("planecli.commands.work_items.get_workspace", return_value="ws")
+    @patch("planecli.commands.work_items.get_client")
+    async def test_show_format_html_shows_raw_description(
+        self, mock_client, mock_ws, mock_resolve, mock_run_sdk, mock_out
+    ):
+        from planecli.commands.work_items import show
+
+        mock_resolve.return_value = (self._resolved_item(), "p1")
+        mock_run_sdk.return_value = {"estimate_point": None}
+
+        await show("ABC-7", no_comments=True, format="html")
+
+        fields = mock_out.call_args[0][1]
+        assert ("description_html", "Description") in fields
+        assert all(key != "description_markdown" for key, _ in fields)
+
     @patch("planecli.commands.work_items.output")
     @patch("planecli.commands.work_items.output_single")
     @patch("planecli.commands.comments.fetch_issue_comments", new_callable=AsyncMock)
