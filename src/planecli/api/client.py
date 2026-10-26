@@ -10,6 +10,28 @@ from planecli.exceptions import APIError, AuthenticationError, PlaneCLIError
 
 _client: PlaneClient | None = None
 _config: Config | None = None
+_verify_ssl: bool = True
+
+_API_CLIENT_NAMES = [
+    "users", "workspaces", "projects", "epics", "work_items",
+    "pages", "labels", "states", "milestones", "modules", "cycles",
+    "work_item_types", "work_item_properties", "customers", "intake",
+    "agent_runs", "stickies", "initiatives", "teamspaces",
+]
+
+
+def set_verify_ssl(value: bool) -> None:
+    """Set whether SSL certificate verification is enabled."""
+    global _verify_ssl, _client
+    _verify_ssl = value
+    _client = None  # invalidate cached client so new one picks up the setting
+
+
+def _disable_ssl(client: PlaneClient) -> None:
+    for name in _API_CLIENT_NAMES:
+        api = getattr(client, name, None)
+        if api is not None:
+            api.session.verify = False
 
 
 def get_config(
@@ -36,6 +58,8 @@ def get_client(
     if _client is None:
         config = get_config(base_url=base_url, api_key=api_key, workspace=workspace)
         _client = PlaneClient(base_url=config.base_url, api_key=config.api_key)
+        if not _verify_ssl:
+            _disable_ssl(_client)
     return _client
 
 

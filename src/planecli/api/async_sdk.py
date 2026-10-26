@@ -21,7 +21,7 @@ from tenacity import (
     wait_random_exponential,
 )
 
-from planecli.api.client import get_config
+from planecli.api.client import get_client, get_config
 
 # Limit concurrent API calls to prevent rate limiting
 _api_semaphore = asyncio.Semaphore(4)
@@ -63,8 +63,13 @@ def create_client() -> PlaneClient:
     Each concurrent batch should use its own client instance to avoid
     sharing requests.Session objects across threads.
     """
+    from planecli.api.client import _disable_ssl, _verify_ssl, get_config
+
     config = get_config()
-    return PlaneClient(base_url=config.base_url, api_key=config.api_key)
+    client = PlaneClient(base_url=config.base_url, api_key=config.api_key)
+    if not _verify_ssl:
+        _disable_ssl(client)
+    return client
 
 
 async def paginate_all_async(

@@ -121,6 +121,19 @@ def main() -> None:
         sys.argv.remove("--no-cache")
         no_cache = True
 
+    # Handle --no-verify-ssl flag via sys.argv (before cyclopts parses)
+    from planecli.api.client import set_verify_ssl
+
+    verify_ssl = True
+    env_val = os.environ.get("PLANE_VERIFY_SSL", "").strip().lower()
+    if env_val in ("false", "0", "no", "off"):
+        verify_ssl = False
+    if "--no-verify-ssl" in sys.argv:
+        sys.argv.remove("--no-verify-ssl")
+        verify_ssl = False
+
+    set_verify_ssl(verify_ssl)
+
     setup_cache()
     set_no_cache(no_cache)
 
