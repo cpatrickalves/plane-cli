@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 from plane.client import PlaneClient
 from plane.errors import HttpError, PlaneError
 
@@ -11,6 +13,7 @@ from planecli.exceptions import APIError, AuthenticationError, PlaneCLIError
 _client: PlaneClient | None = None
 _config: Config | None = None
 _verify_ssl: bool = True
+_warnings_suppressed: bool = False
 
 _API_CLIENT_NAMES = [
     "users", "workspaces", "projects", "epics", "work_items",
@@ -20,14 +23,42 @@ _API_CLIENT_NAMES = [
 ]
 
 
+def _suppress_insecure_warning() -> None:
+    """Silence urllib3's InsecureRequestWarning once verification is opted out.
+
+    When the user explicitly disables SSL verification (via --no-verify-ssl or
+    PLANE_VERIFY_SSL=false), urllib3 still warns on every unverified request.
+    That's expected noise for an intentional opt-out, so we filter it process-wide.
+    """
+    global _warnings_suppressed
+    if _warnings_suppressed:
+        return
+    from urllib3.exceptions import InsecureRequestWarning
+
+    warnings.filterwarnings("ignore", category=InsecureRequestWarning)
+    _warnings_suppressed = True
+
+
 def set_verify_ssl(value: bool) -> None:
     """Set whether SSL certificate verification is enabled."""
     global _verify_ssl, _client
     _verify_ssl = value
+    if not value:
+        _suppress_insecure_warning()
     _client = None  # invalidate cached client so new one picks up the setting
 
 
+def verify_param() -> bool | str:
+    """Return the `verify=` value to pass to direct requests calls.
+
+    Ad-hoc requests calls (e.g. documents.py) honor the same global setting,
+    so they verify by default and skip verification when the user opted out.
+    """
+    return _verify_ssl
+
+
 def _disable_ssl(client: PlaneClient) -> None:
+    _suppress_insecure_warning()
     for name in _API_CLIENT_NAMES:
         api = getattr(client, name, None)
         if api is not None:

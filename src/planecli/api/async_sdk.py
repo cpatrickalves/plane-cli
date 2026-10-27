@@ -21,8 +21,6 @@ from tenacity import (
     wait_random_exponential,
 )
 
-from planecli.api.client import get_client, get_config
-
 # Limit concurrent API calls to prevent rate limiting
 _api_semaphore = asyncio.Semaphore(4)
 
