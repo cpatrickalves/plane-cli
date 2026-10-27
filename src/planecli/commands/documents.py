@@ -10,7 +10,7 @@ from cyclopts import Parameter
 from plane.errors import PlaneError
 
 from planecli.api.async_sdk import run_sdk
-from planecli.api.client import get_client, get_workspace, handle_api_error
+from planecli.api.client import get_client, get_workspace, handle_api_error, verify_param
 from planecli.formatters import output, output_single
 from planecli.utils.resolve import resolve_project_async
 
@@ -79,7 +79,7 @@ async def list_(
             url = f"{config.base_url}/api/v1/workspaces/{workspace}/projects/{project_id}/pages/"
             headers = {"X-Api-Key": config.api_key}
             resp = await asyncio.to_thread(
-                requests.get, url, headers=headers, timeout=30
+                requests.get, url, headers=headers, timeout=30, verify=verify_param()
             )
             resp.raise_for_status()
             resp_data = resp.json()
@@ -235,7 +235,8 @@ async def update(
 
         headers = {"X-Api-Key": config.api_key, "Content-Type": "application/json"}
         resp = await asyncio.to_thread(
-            requests.patch, url, headers=headers, json=update_payload, timeout=30
+            requests.patch, url, headers=headers, json=update_payload, timeout=30,
+            verify=verify_param()
         )
         resp.raise_for_status()
         data = _enrich_doc(resp.json())
@@ -282,7 +283,7 @@ async def delete(
 
         headers = {"X-Api-Key": config.api_key}
         resp = await asyncio.to_thread(
-            requests.delete, url, headers=headers, timeout=30
+            requests.delete, url, headers=headers, timeout=30, verify=verify_param()
         )
         resp.raise_for_status()
     except PlaneError as e:
