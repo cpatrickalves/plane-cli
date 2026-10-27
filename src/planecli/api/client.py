@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import types
 import warnings
 
+import requests
 from plane.client import PlaneClient
 from plane.errors import HttpError, PlaneError
 
@@ -14,13 +16,6 @@ _client: PlaneClient | None = None
 _config: Config | None = None
 _verify_ssl: bool = True
 _warnings_suppressed: bool = False
-
-_API_CLIENT_NAMES = [
-    "users", "workspaces", "projects", "epics", "work_items",
-    "pages", "labels", "states", "milestones", "modules", "cycles",
-    "work_item_types", "work_item_properties", "customers", "intake",
-    "agent_runs", "stickies", "initiatives", "teamspaces",
-]
 
 
 def _suppress_insecure_warning() -> None:
@@ -58,11 +53,51 @@ def verify_param() -> bool | str:
 
 
 def _disable_ssl(client: PlaneClient) -> None:
+    """Disable certificate verification on every requests.Session reachable
+    from ``client``.
+
+    The plane SDK gives each resource its own Session, *including* nested
+    sub-resources (``work_items.comments``, ``work_items.links``,
+    ``customers.properties``, the ``v2`` transport, ...). A flat walk over a
+    fixed list of top-level names silently misses those, so instead we recurse
+    through the client's attributes and flip ``verify`` on every Session found.
+    """
     _suppress_insecure_warning()
-    for name in _API_CLIENT_NAMES:
-        api = getattr(client, name, None)
-        if api is not None:
-            api.session.verify = False
+    _walk_sessions(client, set())
+
+
+def _walk_sessions(obj: object, seen: set[int]) -> None:
+    """Recursively set verify=False on every Session under ``obj``.
+
+    ``seen`` guards against reference cycles in the SDK object graph.
+    """
+    if obj is None:
+        return
+
+    obj_id = id(obj)
+    if obj_id in seen:
+        return
+    seen.add(obj_id)
+
+    # A requests.Session (or subclass): this is the leaf we care about.
+    if isinstance(obj, requests.Session):
+        obj.verify = False
+        return
+
+    # Only descend into plain objects we can introspect. Skip types, modules,
+    # functions, and primitives -- they can't own a Session.
+    if isinstance(obj, type | types.ModuleType | str | bytes | int | float | bool):
+        return
+
+    try:
+        attrs = vars(obj)
+    except TypeError:  # objects without a __dict__ (e.g. some builtins)
+        return
+
+    for value in attrs.values():
+        if isinstance(value, (str, bytes, int, float, bool, type)):
+            continue
+        _walk_sessions(value, seen)
 
 
 def get_config(
