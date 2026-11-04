@@ -163,7 +163,7 @@ async def create(
         client = get_client()
         workspace = get_workspace()
 
-        description_html = f"<p>{content}</p>" if content else "<p></p>"
+        description_html = f"<p>{content}</p>" if content is not None else "<p></p>"
         page_data = CreatePage(name=title, description_html=description_html)
 
         if project:

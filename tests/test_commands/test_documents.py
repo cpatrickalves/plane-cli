@@ -68,3 +68,21 @@ async def test_create_passes_empty_html_body_when_content_omitted(
     assert isinstance(payload, CreatePage)
     assert payload.name == "Test doc"
     assert payload.description_html == "<p></p>"
+
+
+@patch("planecli.commands.documents.output_single")
+@patch("planecli.commands.documents.run_sdk", new_callable=AsyncMock)
+@patch("planecli.commands.documents.get_workspace", return_value="ws")
+@patch("planecli.commands.documents.get_client")
+async def test_create_without_project_creates_workspace_page(
+    mock_client, mock_ws, mock_run_sdk, mock_output_single
+):
+    """Without --project the page is created at workspace level."""
+    mock_run_sdk.return_value = _page_model()
+
+    await create(title="Test doc", content="hello")
+
+    args = mock_run_sdk.call_args[0]
+    assert args[0] is mock_client.return_value.pages.create_workspace_page
+    assert args[1] == "ws"
+    assert args[2].description_html == "<p>hello</p>"
