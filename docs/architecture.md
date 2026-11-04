@@ -38,7 +38,7 @@ record before reporting success — see [ADR-0007](adr/0007-verify-writes-the-ap
 
 **`exceptions.py`** — `PlaneCLIError` subclasses carrying `message`, `hint`, and `exit_code` (Auth=2, NotFound=3, API=4, Validation=5).
 
-**`utils/fuzzy.py`** — rapidfuzz `token_sort_ratio` matching with a default threshold of 60.
+**`utils/fuzzy.py`** — rapidfuzz `token_sort_ratio` matching with a default threshold of 60. `find_best_match` returns the single best match; `find_matches` returns ranked candidates for "did you mean …?" suggestions.
 
 ## Data Flow — resolving and updating a work item
 
