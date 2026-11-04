@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - `project create` without `-i` now derives the identifier from the first 5 ASCII letters of the name (accents folded, digits and symbols dropped), instead of the first 3 raw characters, which could include spaces and punctuation. Names with no usable letters fail with a validation error asking for `-i`, and a 409 on a derived identifier names the value and suggests `-i`. Thanks to Omar Adel (#8)
+- `document create` no longer crashes before the API call: `CreatePage` now receives the required `description_html` at construction (`<p></p>` when `--content` is omitted)
 
 ## [0.5.1] - 2026-07-03
 
