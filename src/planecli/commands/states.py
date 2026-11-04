@@ -238,9 +238,7 @@ async def update(
         if group:
             update_data.group = group.lower()
 
-        updated = await run_sdk(
-            client.states.update, workspace, project_id, state_id, update_data
-        )
+        updated = await run_sdk(client.states.update, workspace, project_id, state_id, update_data)
         data = updated.model_dump()
 
         from planecli.cache import invalidate_resource

@@ -151,13 +151,15 @@ async def test_cached_list_projects(mock_paginate, mock_create_client, mock_hash
 @patch("planecli.api.async_sdk.create_client")
 @patch("planecli.api.async_sdk.run_sdk", new_callable=AsyncMock)
 async def test_cached_list_members(mock_run_sdk, mock_create_client, mock_hash):
-    member = _make_model({
-        "id": "u1",
-        "display_name": "Alice",
-        "first_name": "Alice",
-        "last_name": "Smith",
-        "email": "alice@example.com",
-    })
+    member = _make_model(
+        {
+            "id": "u1",
+            "display_name": "Alice",
+            "first_name": "Alice",
+            "last_name": "Smith",
+            "email": "alice@example.com",
+        }
+    )
     mock_run_sdk.return_value = [member]
 
     result = await cached_list_members("my-ws")
@@ -242,11 +244,13 @@ async def test_cached_list_work_items(mock_paginate, mock_create_client, mock_ha
 @patch("planecli.api.async_sdk.create_client")
 @patch("planecli.api.async_sdk.run_sdk", new_callable=AsyncMock)
 async def test_cached_get_me(mock_run_sdk, mock_create_client, mock_hash):
-    me = _make_model({
-        "id": "user-1",
-        "display_name": "Patrick",
-        "email": "patrick@example.com",
-    })
+    me = _make_model(
+        {
+            "id": "user-1",
+            "display_name": "Patrick",
+            "email": "patrick@example.com",
+        }
+    )
     mock_run_sdk.return_value = me
 
     result = await cached_get_me("my-ws")

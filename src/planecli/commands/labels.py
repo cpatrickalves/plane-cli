@@ -215,9 +215,7 @@ async def update(
         if description:
             update_data.description = description
 
-        updated = await run_sdk(
-            client.labels.update, workspace, project_id, label_id, update_data
-        )
+        updated = await run_sdk(client.labels.update, workspace, project_id, label_id, update_data)
         data = updated.model_dump()
 
         from planecli.cache import invalidate_resource

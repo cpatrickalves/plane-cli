@@ -289,7 +289,6 @@ async def delete(
     console.print(f"[green]Intake item {issue_id} deleted.[/]")
 
 
-
 @intake_app.command
 async def enabled(
     project: str,

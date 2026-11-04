@@ -58,6 +58,7 @@ def _normalize_status(value: str) -> str:
         )
     return key
 
+
 MODULE_COLUMNS = [
     ("id", "ID"),
     ("name", "Name"),

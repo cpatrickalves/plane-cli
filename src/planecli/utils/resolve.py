@@ -118,9 +118,7 @@ def resolve_work_item(
     # See docs/adr/0003-sdk-escape-hatches.md for the full rationale.
     if _is_uuid(query):
         try:
-            return client.work_items._get(
-                f"{workspace}/projects/{project_id}/work-items/{query}"
-            )
+            return client.work_items._get(f"{workspace}/projects/{project_id}/work-items/{query}")
         except HttpError as e:
             _reraise_if_retryable(e)
             raise ResourceNotFoundError("Work item", query)
@@ -343,9 +341,7 @@ def resolve_label(
 # ---------------------------------------------------------------------------
 
 
-async def resolve_project_async(
-    query: str, client: PlaneClient, workspace: str
-) -> dict[str, Any]:
+async def resolve_project_async(query: str, client: PlaneClient, workspace: str) -> dict[str, Any]:
     """Async version of resolve_project."""
     from planecli.api.async_sdk import run_sdk
     from planecli.cache import cached_list_projects
@@ -473,9 +469,7 @@ async def resolve_work_item_across_projects_async(
     )
 
 
-async def resolve_user_async(
-    query: str, client: PlaneClient, workspace: str
-) -> dict[str, Any]:
+async def resolve_user_async(query: str, client: PlaneClient, workspace: str) -> dict[str, Any]:
     """Async version of resolve_user."""
     from planecli.cache import cached_get_me, cached_list_members
 

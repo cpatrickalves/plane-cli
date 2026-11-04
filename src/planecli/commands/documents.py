@@ -40,6 +40,7 @@ def _enrich_doc(data: dict) -> dict:
     desc_html = data.get("description_html") or ""
     if desc_html:
         import re
+
         data["content_text"] = re.sub(r"<[^>]+>", "", desc_html).strip()
     else:
         data["content_text"] = ""
@@ -75,12 +76,11 @@ async def list_(
             project_id = proj["id"]
             # Use direct API call since SDK doesn't have list_project_pages
             from planecli.api.client import get_config
+
             config = get_config()
             url = f"{config.base_url}/api/v1/workspaces/{workspace}/projects/{project_id}/pages/"
             headers = {"X-Api-Key": config.api_key}
-            resp = await asyncio.to_thread(
-                requests.get, url, headers=headers, timeout=30
-            )
+            resp = await asyncio.to_thread(requests.get, url, headers=headers, timeout=30)
             resp.raise_for_status()
             resp_data = resp.json()
             # Handle paginated response
@@ -129,9 +129,7 @@ async def show(
                 client.pages.retrieve_project_page, workspace, project_id, document
             )
         else:
-            page = await run_sdk(
-                client.pages.retrieve_workspace_page, workspace, document
-            )
+            page = await run_sdk(client.pages.retrieve_workspace_page, workspace, document)
 
         data = _enrich_doc(page.model_dump())
     except PlaneError as e:
@@ -172,13 +170,9 @@ async def create(
         if project:
             proj = await resolve_project_async(project, client, workspace)
             project_id = proj["id"]
-            page = await run_sdk(
-                client.pages.create_project_page, workspace, project_id, page_data
-            )
+            page = await run_sdk(client.pages.create_project_page, workspace, project_id, page_data)
         else:
-            page = await run_sdk(
-                client.pages.create_workspace_page, workspace, page_data
-            )
+            page = await run_sdk(client.pages.create_workspace_page, workspace, page_data)
 
         data = _enrich_doc(page.model_dump())
     except PlaneError as e:
@@ -217,6 +211,7 @@ async def update(
         client = get_client()
         workspace = get_workspace()
         from planecli.api.client import get_config
+
         config = get_config()
 
         update_payload: dict = {}
@@ -270,6 +265,7 @@ async def delete(
         client = get_client()
         workspace = get_workspace()
         from planecli.api.client import get_config
+
         config = get_config()
 
         if project:
@@ -281,9 +277,7 @@ async def delete(
             url = f"{config.base_url}/api/v1/workspaces/{workspace}/pages/{document}/"
 
         headers = {"X-Api-Key": config.api_key}
-        resp = await asyncio.to_thread(
-            requests.delete, url, headers=headers, timeout=30
-        )
+        resp = await asyncio.to_thread(requests.delete, url, headers=headers, timeout=30)
         resp.raise_for_status()
     except PlaneError as e:
         raise handle_api_error(e)

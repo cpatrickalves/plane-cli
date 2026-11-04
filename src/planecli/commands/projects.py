@@ -54,6 +54,7 @@ def _enrich_project(data: dict) -> dict:
     data["state_display"] = _NETWORK_TO_STATE.get(network, fallback)
     return data
 
+
 PROJECT_FIELDS = [
     ("id", "UUID"),
     ("identifier", "Identifier"),
@@ -101,9 +102,8 @@ async def list_(
         if state_lower not in state_to_network:
             valid = ", ".join(sorted(state_to_network.keys()))
             from planecli.exceptions import ValidationError
-            raise ValidationError(
-                f"Invalid state '{state}'. Valid states: {valid}"
-            )
+
+            raise ValidationError(f"Invalid state '{state}'. Valid states: {valid}")
         target_network = state_to_network[state_lower]
         data = [d for d in data if d.get("network") == target_network]
 
@@ -235,9 +235,7 @@ async def update(
         if description:
             update_data.description = description
 
-        updated = await run_sdk(
-            client.projects.update, workspace, project_id, update_data
-        )
+        updated = await run_sdk(client.projects.update, workspace, project_id, update_data)
         data = updated.model_dump()
 
         from planecli.cache import invalidate_resource

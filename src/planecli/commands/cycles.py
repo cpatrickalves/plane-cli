@@ -231,9 +231,7 @@ async def update(
         if end_date:
             update_data.end_date = end_date
 
-        updated = await run_sdk(
-            client.cycles.update, workspace, project_id, cycle_id, update_data
-        )
+        updated = await run_sdk(client.cycles.update, workspace, project_id, cycle_id, update_data)
         data = updated.model_dump()
 
         from planecli.cache import invalidate_resource
@@ -320,9 +318,7 @@ async def add_item(
         cycle_id = cyc_data["id"]
         item_id = item["id"]
 
-        await run_sdk(
-            client.cycles.add_work_items, workspace, project_id, cycle_id, [item_id]
-        )
+        await run_sdk(client.cycles.add_work_items, workspace, project_id, cycle_id, [item_id])
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -366,9 +362,7 @@ async def remove_item(
         cycle_id = cyc_data["id"]
         item_id = item["id"]
 
-        await run_sdk(
-            client.cycles.remove_work_item, workspace, project_id, cycle_id, item_id
-        )
+        await run_sdk(client.cycles.remove_work_item, workspace, project_id, cycle_id, item_id)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -403,9 +397,7 @@ async def items(
         cyc_data = await resolve_cycle_async(cycle, client, workspace, project_id)
         cycle_id = cyc_data["id"]
 
-        response = await run_sdk(
-            client.cycles.list_work_items, workspace, project_id, cycle_id
-        )
+        response = await run_sdk(client.cycles.list_work_items, workspace, project_id, cycle_id)
         work_items = response.results if hasattr(response, "results") else []
     except PlaneError as e:
         raise handle_api_error(e)
