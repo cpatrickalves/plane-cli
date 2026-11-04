@@ -10,6 +10,7 @@
 - [States](#states)
 - [Documents](#documents)
 - [Comments](#comments)
+- [Attachments](#attachments)
 - [Intake](#intake)
 - [Users](#users)
 - [Cache](#cache)
@@ -34,6 +35,7 @@ Environment variable `PLANECLI_NO_CACHE=1` disables cache globally.
 | `project` | `projects` |
 | `document` | `doc`, `docs`, `documents` |
 | `comment` | `comments` |
+| `attachment` | `attachments` |
 | `module` | `modules` |
 | `label` | `labels` |
 | `state` | `states` |
@@ -293,6 +295,25 @@ planecli comment delete COMMENT_ID --issue ISSUE [--project/-p PROJECT]
 oldest → newest — not the first N chronologically. A limit of `0` or a negative
 value returns no comments (consistent with the `[:limit]` semantics used elsewhere,
 where `0` means "none").
+
+## Attachments
+
+Command group: `planecli attachment` (alias: `attachments`)
+
+```
+planecli attachment ls ISSUE [--project/-p PROJECT]
+planecli attachment attach ISSUE -f FILE [--force] [--project/-p PROJECT]
+planecli attachment get ISSUE [SELECTOR] [--all] [--dir/-d DIR | --output/-o FILE] [--force] [--project/-p PROJECT]
+```
+
+`get` (aliases `download`, `dl`) saves files to disk and never prints their content.
+SELECTOR is an attachment id or exact file name; it may be omitted when the work item
+has one attachment or `--all` is given. A name shared by several attachments
+(screenshots are all `image.png`) fails with the list of ids unless `--all` is given,
+which saves every match as `image.png`, `image-2.png`, ... Existing files in `--dir`
+(default: the current directory) are sidestepped the same way unless `--force`;
+`-o` saves exactly one attachment and overwrites. `--json` prints
+`[{id, name, type, size, path}]` with absolute paths.
 
 ## Intake
 

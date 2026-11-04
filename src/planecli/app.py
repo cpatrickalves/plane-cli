@@ -18,6 +18,7 @@ app = cyclopts.App(
 )
 
 # Import and register sub-apps
+from planecli.commands.attachments import attachment_app  # noqa: E402
 from planecli.commands.cache_cmd import cache_app  # noqa: E402
 from planecli.commands.comments import comment_app  # noqa: E402
 from planecli.commands.cycles import cycle_app  # noqa: E402
@@ -32,6 +33,7 @@ from planecli.commands.work_items import wi_app  # noqa: E402
 
 app.command(project_app)
 app.command(wi_app)
+app.command(attachment_app)
 app.command(comment_app)
 app.command(doc_app)
 app.command(intake_app)
