@@ -23,7 +23,7 @@ def _normalize_hex(color: str) -> str:
         color = f"#{color}"
     # Expand 3-char shorthand: #abc -> #aabbcc
     if len(color) == 4:
-        color = f"#{color[1]*2}{color[2]*2}{color[3]*2}"
+        color = f"#{color[1] * 2}{color[2] * 2}{color[3] * 2}"
     return color
 
 

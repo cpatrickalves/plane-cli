@@ -176,9 +176,7 @@ async def cached_list_labels(workspace: str, project_id: str) -> list[dict[str, 
     return await _cached_list(key, TTL_CONFIG, _fetch)
 
 
-async def cached_list_estimate_points(
-    workspace: str, project_id: str
-) -> list[dict[str, Any]]:
+async def cached_list_estimate_points(workspace: str, project_id: str) -> list[dict[str, Any]]:
     """Fetch estimate points by expanding them from work items (TTL: 10m).
 
     Plane's external API has no dedicated endpoint for estimate points.

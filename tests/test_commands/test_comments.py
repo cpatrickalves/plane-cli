@@ -12,9 +12,7 @@ from planecli.commands.comments import _enrich_comment
 
 def test_enrich_comment_resolves_actor_name_from_members_map():
     members_map = {"user-1": "Alice"}
-    result = _enrich_comment(
-        {"actor": "user-1", "comment_html": "<p>hello</p>"}, members_map
-    )
+    result = _enrich_comment({"actor": "user-1", "comment_html": "<p>hello</p>"}, members_map)
     assert result["actor_name"] == "Alice"
     assert result["body_text"] == "hello"
 
@@ -25,9 +23,7 @@ def test_enrich_comment_falls_back_to_uuid_without_map():
 
 
 def test_enrich_comment_falls_back_to_uuid_when_member_missing():
-    result = _enrich_comment(
-        {"actor": "user-x", "comment_html": ""}, {"user-1": "Alice"}
-    )
+    result = _enrich_comment({"actor": "user-x", "comment_html": ""}, {"user-1": "Alice"})
     assert result["actor_name"] == "user-x"
     assert result["body_text"] == ""
 
@@ -43,10 +39,18 @@ async def test_fetch_issue_comments_sorts_and_resolves(mock_comments, mock_membe
     ]
     # Returned out of order; helper must sort oldest -> newest
     mock_comments.return_value = [
-        {"id": "c2", "actor": "u2", "comment_html": "<p>later</p>",
-         "created_at": "2026-02-11T10:00:00Z"},
-        {"id": "c1", "actor": "u1", "comment_html": "<p>earlier</p>",
-         "created_at": "2026-02-10T10:00:00Z"},
+        {
+            "id": "c2",
+            "actor": "u2",
+            "comment_html": "<p>later</p>",
+            "created_at": "2026-02-11T10:00:00Z",
+        },
+        {
+            "id": "c1",
+            "actor": "u1",
+            "comment_html": "<p>earlier</p>",
+            "created_at": "2026-02-10T10:00:00Z",
+        },
     ]
 
     result = await fetch_issue_comments("ws", "p1", "item-1")
@@ -64,8 +68,12 @@ async def test_fetch_issue_comments_returns_all(mock_comments, mock_members):
 
     mock_members.return_value = []
     mock_comments.return_value = [
-        {"id": f"c{i}", "actor": "u1", "comment_html": "<p>x</p>",
-         "created_at": f"2026-02-{i:02d}T00:00:00Z"}
+        {
+            "id": f"c{i}",
+            "actor": "u1",
+            "comment_html": "<p>x</p>",
+            "created_at": f"2026-02-{i:02d}T00:00:00Z",
+        }
         for i in range(1, 31)
     ]
 
@@ -87,9 +95,7 @@ async def test_fetch_issue_comments_raises_on_failure(mock_comments, mock_member
 
 @patch("planecli.cache.cached_list_members", new_callable=AsyncMock)
 @patch("planecli.cache.cached_list_comments", new_callable=AsyncMock)
-async def test_fetch_issue_comments_degrades_when_members_fail(
-    mock_comments, mock_members
-):
+async def test_fetch_issue_comments_degrades_when_members_fail(mock_comments, mock_members):
     """A members-list failure is a secondary-enrichment concern: it must not
     take down comments that already loaded successfully (names fall back to
     the raw actor UUID, same as the no-map case)."""
@@ -97,8 +103,12 @@ async def test_fetch_issue_comments_degrades_when_members_fail(
 
     mock_members.side_effect = PlaneError("members unavailable")
     mock_comments.return_value = [
-        {"id": "c1", "actor": "u1", "comment_html": "<p>hi</p>",
-         "created_at": "2026-02-10T10:00:00Z"},
+        {
+            "id": "c1",
+            "actor": "u1",
+            "comment_html": "<p>hi</p>",
+            "created_at": "2026-02-10T10:00:00Z",
+        },
     ]
 
     result = await fetch_issue_comments("ws", "p1", "item-1")

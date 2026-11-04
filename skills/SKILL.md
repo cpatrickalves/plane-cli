@@ -4,7 +4,7 @@ description: "Manage Plane.so through the planecli CLI — work items, projects,
 allowed-tools: Bash(planecli *)
 metadata:
   author: Patrick Alves
-  version: "1.6"
+  version: "1.7"
 ---
 
 # PlaneCLI
@@ -55,7 +55,7 @@ planecli wi show ABC-123 --json                     # bundles comments (see Gotc
 planecli wi show ABC-123 --no-comments --json       # skip the comment fetch
 planecli wi assign ABC-123 --json                   # assign to yourself
 planecli wi assign ABC-123 --assign "Name" --json
-planecli wi search "login bug" -p "Project" --json
+planecli wi search "login bug" -p "Project" --json   # can return [] — see Gotchas
 planecli wi delete ABC-123
 ```
 
@@ -107,6 +107,7 @@ planecli intake delete <issue_id> -p "Project"
 planecli module ls -p "Project" --json
 planecli module create "Auth" -p "Project" -d "Login flows" --status in-progress --json
 planecli module update "Auth" -p "Project" --status completed --json
+# -d on a module is plain text: the UI shows it unformatted, links not clickable
 
 # Labels
 planecli label ls -p "Project" --json
@@ -116,7 +117,7 @@ planecli label create "urgent" -p "Project" --color "#FF0000" --json
 planecli state ls -p "Project" --group started --json
 planecli state create "In Review" -p "Project" --group started --color "#FFA500" --json
 
-# Documents
+# Documents (some self-hosted versions answer 405 to doc ls: no page listing in their public API)
 planecli doc ls -p "Project" --json
 planecli doc create --title "Spec" --content "## Details..." -p "Project" --json
 
@@ -129,15 +130,28 @@ planecli comment create ABC-123 --body "Fixed in PR #456" --json
 
 - **Work-item descriptions are HTML.** `wi create` / `wi update -d` store the value verbatim inside
   the Plane editor's HTML, so markdown renders literally (`##`, backticks). Pass `<h2>`, `<p>`,
-  `<ul>`, `<code>`, `<pre><code>`. From a markdown source, convert first and pass
-  `-d "$(cat body.html)"` — a file beats a huge inline string. Plane prepends a cosmetic empty
-  `<p></p>`. Verify the stored value: `wi show ABC-123 --no-cache --json | jq -r .description_html`
+  `<ul>`, `<code>`, `<pre><code>`. From a markdown source, convert first and pass the file through
+  command substitution. planecli wraps `-d` in `<p>…</p>` (#32), so close and reopen it around
+  block HTML: `-d "</p>$(cat body.html)<p>"`. One argument caps at 128 KB on Linux; keep each body
+  under that. Checklists render as checkboxes only in the editor's task-list shape:
+  `<ul data-type="taskList"><li data-type="taskItem" data-checked="false"><label><input type="checkbox"><span></span></label><div><p>…</p></div></li></ul>`.
+  Verify the stored value: `wi show ABC-123 --no-cache --json | jq -r .description_html`
   must contain real tags; a non-empty description proves nothing, since malformed input is stored
   happily. Work items only: `intake create -d` HTML-escapes its input, so tags show up as text.
 - **Confirm a create against the server before retrying it.** `wi create` prints the created item
   as JSON, so a broken `jq` filter over that output looks exactly like a failed create. Check with
   `wi ls -p PROJECT --no-cache --json | jq -r '.[] | select(.parent=="<parent-uuid>") | .sequence_id'`.
   There is no idempotency key — retrying a create that succeeded silently duplicates the item.
+  A failed `wi create --module` is the common case: the module add is a second call, so the item
+  can exist outside the module while the command reports an error (#30).
+- **Set module and parent at create time.** `wi update` has no `--module` or `--parent`, and there
+  is no `module add-item`; an item created without them stays that way from the CLI.
+- **Bulk writes hit the rate limit (HTTP 429).** Each command makes several API calls to resolve
+  project, state, labels, module, and user names, so back-to-back creates exhaust the limit after
+  about twenty items. Pause a few seconds between creates and stop at the first error to check the
+  server before going on.
+- **`wi search` returns `[]` on some Plane versions** (#31). Find items by filtering
+  `wi ls -p PROJECT --no-cache --limit 1000 --json` on `name` instead.
 - **`wi show` occasionally returns non-JSON** (`jq: parse error`). Transient — retry once before
   investigating.
 - **`*_names` fields hold UUIDs.** `assignee_names`, `label_names`, `label_detail_names`, and
@@ -162,10 +176,11 @@ npx marked -i 01.md -o 01.html          # or any md-to-html converter
 
 # 2. create the FIRST item and inspect its stored HTML before going further
 planecli wi create "First title" -p "Project" --parent ABC-1 --assign "Name" \
-  --state "Todo" --priority high --labels "bug,backend" -d "$(cat 01.html)" --json
+  --state "Todo" --priority high --labels "bug,backend" -d "</p>$(cat 01.html)<p>" --json
 planecli wi show ABC-2 --no-cache --json | jq -r .description_html   # expect <h2>, <pre>
 
-# 3. create the remaining items, then verify the whole batch by parent
+# 3. create the remaining items with a pause between creates (rate limit), then verify the
+#    whole batch by parent
 planecli wi ls -p "Project" --no-cache --json \
   | jq -r '.[] | select(.parent=="<parent-uuid>") | "\(.sequence_id) \(.priority) \(.name)"'
 ```

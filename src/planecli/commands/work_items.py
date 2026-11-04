@@ -79,9 +79,7 @@ def _enrich_work_item(
     if not project_identifier:
         project_detail = data.get("project_detail")
         project_identifier = (
-            project_detail.get("identifier", "")
-            if isinstance(project_detail, dict)
-            else ""
+            project_detail.get("identifier", "") if isinstance(project_detail, dict) else ""
         )
     seq = data.get("sequence_id", "")
     if project_identifier and seq:
@@ -135,14 +133,10 @@ def _enrich_work_item(
         label_parts: list[str | Text] = []
         for lbl in labels:
             if isinstance(lbl, dict):
-                label_parts.append(
-                    colorize(lbl.get("name", ""), lbl.get("color"))
-                )
+                label_parts.append(colorize(lbl.get("name", ""), lbl.get("color")))
             elif isinstance(lbl, str) and label_map and lbl in label_map:
                 info = label_map[lbl]
-                label_parts.append(
-                    colorize(info["name"] or "", info.get("color"))
-                )
+                label_parts.append(colorize(info["name"] or "", info.get("color")))
             elif isinstance(lbl, str):
                 label_parts.append(lbl)
         if label_parts:
@@ -258,10 +252,7 @@ async def list_(
         for m in members:
             if not m.get("id"):
                 continue
-            full_name = " ".join(
-                p for p in [m.get("first_name", ""), m.get("last_name", "")]
-                if p
-            )
+            full_name = " ".join(p for p in [m.get("first_name", ""), m.get("last_name", "")] if p)
             member_map[m["id"]] = full_name or m.get("display_name", "")
 
         if project:
@@ -293,11 +284,13 @@ async def list_(
                         "color": s.get("color"),
                         "group": s.get("group"),
                     }
-                    for s in states if s.get("id") and s.get("name")
+                    for s in states
+                    if s.get("id") and s.get("name")
                 }
                 label_map = {
                     lb["id"]: {"name": lb.get("name"), "color": lb.get("color")}
-                    for lb in labels_list if lb.get("id") and lb.get("name")
+                    for lb in labels_list
+                    if lb.get("id") and lb.get("name")
                 }
 
                 enriched_items = []
@@ -339,11 +332,11 @@ async def list_(
         user = await resolve_user_async(assignee, client, workspace)
         user_id = user["id"]
         data = [
-            d for d in data
+            d
+            for d in data
             if user_id in (d.get("assignees") or [])
             or any(
-                (isinstance(a, dict) and a.get("id") == user_id)
-                for a in (d.get("assignees") or [])
+                (isinstance(a, dict) and a.get("id") == user_id) for a in (d.get("assignees") or [])
             )
         ]
 
@@ -352,10 +345,10 @@ async def list_(
         state_tokens = [s.strip().lower() for s in state.split(",") if s.strip()]
         if state_tokens:
             data = [
-                d for d in data
+                d
+                for d in data
                 if any(
-                    token in str(d.get("state_detail_name") or "").lower()
-                    for token in state_tokens
+                    token in str(d.get("state_detail_name") or "").lower() for token in state_tokens
                 )
             ]
 
@@ -364,9 +357,7 @@ async def list_(
         if project:
             project_id = projects_to_list[0]["id"] if projects_to_list else None
             if project_id:
-                parent_data = await resolve_work_item_async(
-                    parent, client, workspace, project_id
-                )
+                parent_data = await resolve_work_item_async(parent, client, workspace, project_id)
             else:
                 parent_data, _ = await resolve_work_item_across_projects_async(
                     parent, client, workspace
@@ -383,7 +374,8 @@ async def list_(
         label_tokens = [ln.strip().lower() for ln in labels.split(",") if ln.strip()]
         if label_tokens:
             data = [
-                d for d in data
+                d
+                for d in data
                 if any(
                     token in name.lower()
                     for token in label_tokens
@@ -429,9 +421,7 @@ async def show(
             project_id = await _resolve_project_id_async(project)
             data = await resolve_work_item_async(issue, client, workspace, project_id)
         else:
-            data, _ = await resolve_work_item_across_projects_async(
-                issue, client, workspace
-            )
+            data, _ = await resolve_work_item_across_projects_async(issue, client, workspace)
 
         # Re-fetch with expanded estimate_point for display
         if data.get("id") and data.get("project"):
@@ -452,10 +442,9 @@ async def show(
     if not no_comments and data.get("id") and data.get("project"):
         from planecli.commands.comments import fetch_issue_comments
         from planecli.exceptions import PlaneCLIError
+
         try:
-            data["comments"] = await fetch_issue_comments(
-                workspace, data["project"], data["id"]
-            )
+            data["comments"] = await fetch_issue_comments(workspace, data["project"], data["id"])
         except (PlaneError, PlaneCLIError) as exc:
             logger.warning("Failed to fetch comments: {}", exc)
             data["comments"] = None  # signal failure, do NOT abort
@@ -561,9 +550,7 @@ async def create(
         dependent_tasks = []
         dep_keys = []
         if state:
-            dependent_tasks.append(
-                resolve_state_async(state, client, workspace, project_id)
-            )
+            dependent_tasks.append(resolve_state_async(state, client, workspace, project_id))
             dep_keys.append("state")
         if estimate is not None:
             dependent_tasks.append(
@@ -573,9 +560,7 @@ async def create(
         if labels:
             label_names = [ln.strip() for ln in labels.split(",") if ln.strip()]
             for ln in label_names:
-                dependent_tasks.append(
-                    resolve_label_async(ln, client, workspace, project_id)
-                )
+                dependent_tasks.append(resolve_label_async(ln, client, workspace, project_id))
                 dep_keys.append("label")
 
         if dependent_tasks:
@@ -604,7 +589,10 @@ async def create(
             module_data = await resolve_module_async(module, client, workspace, project_id)
             await run_sdk(
                 client.modules.add_work_items,
-                workspace, project_id, module_data["id"], [data["id"]],
+                workspace,
+                project_id,
+                module_data["id"],
+                [data["id"]],
             )
 
     except PlaneError as e:
@@ -689,9 +677,7 @@ async def update(
             parallel_tasks.append(resolve_user_async(assignee, client, workspace))
             task_keys.append("assignee")
         if state:
-            parallel_tasks.append(
-                resolve_state_async(state, client, workspace, project_id)
-            )
+            parallel_tasks.append(resolve_state_async(state, client, workspace, project_id))
             task_keys.append("state")
         if estimate is not None:
             parallel_tasks.append(
@@ -701,9 +687,7 @@ async def update(
         if labels and not clear_labels:
             label_names = [ln.strip() for ln in labels.split(",") if ln.strip()]
             for ln in label_names:
-                parallel_tasks.append(
-                    resolve_label_async(ln, client, workspace, project_id)
-                )
+                parallel_tasks.append(resolve_label_async(ln, client, workspace, project_id))
                 task_keys.append("label")
 
         if parallel_tasks:
@@ -865,9 +849,7 @@ async def assign(
         user = await resolve_user_async(assignee, client, workspace)
 
         update_data = UpdateWorkItem(assignees=[user["id"]])
-        await run_sdk(
-            client.work_items.update, workspace, project_id, item_id, update_data
-        )
+        await run_sdk(client.work_items.update, workspace, project_id, item_id, update_data)
     except PlaneError as e:
         raise handle_api_error(e)
 

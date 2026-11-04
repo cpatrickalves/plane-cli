@@ -338,16 +338,32 @@ class TestWiList:
 
         mock_cached_work_items.return_value = [
             _make_work_item_dict(
-                "wi-1", "My progress task", 1, state="s-progress", assignees=["user-1"],
+                "wi-1",
+                "My progress task",
+                1,
+                state="s-progress",
+                assignees=["user-1"],
             ),
             _make_work_item_dict(
-                "wi-2", "Other progress task", 2, state="s-progress", assignees=["user-2"],
+                "wi-2",
+                "Other progress task",
+                2,
+                state="s-progress",
+                assignees=["user-2"],
             ),
             _make_work_item_dict(
-                "wi-3", "My review task", 3, state="s-review", assignees=["user-1"],
+                "wi-3",
+                "My review task",
+                3,
+                state="s-review",
+                assignees=["user-1"],
             ),
             _make_work_item_dict(
-                "wi-4", "My done task", 4, state="s-done", assignees=["user-1"],
+                "wi-4",
+                "My done task",
+                4,
+                state="s-done",
+                assignees=["user-1"],
             ),
         ]
 
@@ -406,6 +422,7 @@ class TestWiList:
         mock_resolve_user.side_effect = ResourceNotFoundError("User", "nonexistent")
 
         import pytest
+
         with pytest.raises(ResourceNotFoundError):
             await list_(assignee="nonexistent")
 
@@ -1074,7 +1091,10 @@ class TestWiUpdate:
     @patch("planecli.commands.work_items.resolve_estimate_point_async", new_callable=AsyncMock)
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
-    @patch("planecli.commands.work_items.resolve_work_item_across_projects_async", new_callable=AsyncMock)
+    @patch(
+        "planecli.commands.work_items.resolve_work_item_across_projects_async",
+        new_callable=AsyncMock,
+    )
     @patch("planecli.cache.invalidate_resource", new_callable=AsyncMock)
     async def test_update_with_estimate(
         self,
@@ -1112,7 +1132,10 @@ class TestWiUpdate:
     @patch("planecli.commands.work_items.run_sdk", new_callable=AsyncMock)
     @patch("planecli.commands.work_items.get_workspace", return_value="test-ws")
     @patch("planecli.commands.work_items.get_client")
-    @patch("planecli.commands.work_items.resolve_work_item_across_projects_async", new_callable=AsyncMock)
+    @patch(
+        "planecli.commands.work_items.resolve_work_item_across_projects_async",
+        new_callable=AsyncMock,
+    )
     @patch("planecli.cache.invalidate_resource", new_callable=AsyncMock)
     async def test_update_without_estimate(
         self,
@@ -1316,17 +1339,21 @@ class TestWiShow:
     @patch("planecli.commands.work_items.get_workspace", return_value="ws")
     @patch("planecli.commands.work_items.get_client")
     async def test_show_renders_comments_section(
-        self, mock_client, mock_ws, mock_resolve, mock_run_sdk, mock_fetch,
-        mock_out_single, mock_output,
+        self,
+        mock_client,
+        mock_ws,
+        mock_resolve,
+        mock_run_sdk,
+        mock_fetch,
+        mock_out_single,
+        mock_output,
     ):
         from planecli.commands.comments import COMMENT_COLUMNS
         from planecli.commands.work_items import show
 
         mock_resolve.return_value = (self._resolved_item(), "p1")
         mock_run_sdk.return_value = {"estimate_point": None}
-        comments = [
-            {"id": "c1", "actor_name": "Alice", "body_text": "hi", "created_at": "t1"}
-        ]
+        comments = [{"id": "c1", "actor_name": "Alice", "body_text": "hi", "created_at": "t1"}]
         mock_fetch.return_value = comments
 
         await show("ABC-7")  # human mode (json=False)
@@ -1349,8 +1376,15 @@ class TestWiShow:
     @patch("planecli.commands.work_items.get_workspace", return_value="ws")
     @patch("planecli.commands.work_items.get_client")
     async def test_show_renders_none_when_empty(
-        self, mock_client, mock_ws, mock_resolve, mock_run_sdk, mock_fetch,
-        mock_out_single, mock_output, mock_console,
+        self,
+        mock_client,
+        mock_ws,
+        mock_resolve,
+        mock_run_sdk,
+        mock_fetch,
+        mock_out_single,
+        mock_output,
+        mock_console,
     ):
         from planecli.commands.work_items import show
 
@@ -1376,8 +1410,15 @@ class TestWiShow:
     @patch("planecli.commands.work_items.get_workspace", return_value="ws")
     @patch("planecli.commands.work_items.get_client")
     async def test_show_renders_failed_to_load(
-        self, mock_client, mock_ws, mock_resolve, mock_run_sdk, mock_fetch,
-        mock_out_single, mock_output, mock_console,
+        self,
+        mock_client,
+        mock_ws,
+        mock_resolve,
+        mock_run_sdk,
+        mock_fetch,
+        mock_out_single,
+        mock_output,
+        mock_console,
     ):
         from planecli.commands.work_items import show
 
@@ -1402,8 +1443,15 @@ class TestWiShow:
     @patch("planecli.commands.work_items.get_workspace", return_value="ws")
     @patch("planecli.commands.work_items.get_client")
     async def test_show_no_false_failure_when_fetch_not_attempted(
-        self, mock_client, mock_ws, mock_resolve, mock_run_sdk, mock_fetch,
-        mock_out_single, mock_output, mock_console,
+        self,
+        mock_client,
+        mock_ws,
+        mock_resolve,
+        mock_run_sdk,
+        mock_fetch,
+        mock_out_single,
+        mock_output,
+        mock_console,
     ):
         """Missing id/project skips the fetch; the human view must not claim
         it "failed to load" (a false failure signal) — it just says nothing."""
