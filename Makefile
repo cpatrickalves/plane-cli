@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-tool sync test test-v lint lint-fix format check build clean run
+.PHONY: help install install-tool sync test test-v lint lint-fix format format-check check build clean run
 
 # ──────────────────────────────────────────────
 # Setup
@@ -38,17 +38,21 @@ test-v: ## Run tests (verbose)
 
 lint: ## Run linter
 	@echo "lint - Run linter using ruff"
-	uv run ruff check src/
+	uv run ruff check src/ tests/
 
 lint-fix: ## Run linter with auto-fix
 	@echo "lint-fix - Run linter with auto-fix"
-	uv run ruff check --fix src/
+	uv run ruff check --fix src/ tests/
 
 format: ## Format code using ruff formatter
 	@echo "format - Format code using ruff formatter"
 	uv run ruff format src/ tests/
 
-check: lint test ## Run lint + tests
+format-check: ## Check formatting without changing files
+	@echo "format-check - Check formatting using ruff formatter"
+	uv run ruff format --check src/ tests/
+
+check: lint format-check test ## Run lint + format check + tests
 
 # ──────────────────────────────────────────────
 # Build & Clean

@@ -411,7 +411,8 @@ make test-v          # Run tests (verbose)
 make lint            # Run linter
 make lint-fix        # Run linter with auto-fix
 make format          # Format code using ruff formatter
-make check           # Run lint + tests
+make format-check    # Check formatting without changing files
+make check           # Run lint + format check + tests
 make build           # Build distribution packages
 make clean           # Remove build artifacts and caches
 make run ARGS="..."  # Run the CLI with arguments

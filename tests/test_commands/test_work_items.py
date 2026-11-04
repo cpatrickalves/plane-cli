@@ -7,8 +7,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from plane.errors import HttpError
 
-from planecli.commands.work_items import WI_COLUMNS, WI_FIELDS, create, list_, update
-from planecli.commands.work_items import _enrich_work_item
+from planecli.commands.work_items import (
+    WI_COLUMNS,
+    WI_FIELDS,
+    _enrich_work_item,
+    create,
+    list_,
+    update,
+)
 
 
 def _make_http_error(status_code: int, message: str = "") -> HttpError:

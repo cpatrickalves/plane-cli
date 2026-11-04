@@ -7,14 +7,14 @@ import sys
 
 import cyclopts
 
-from planecli import __version__
+from planecli import full_version
 from planecli.exceptions import PlaneCLIError
 from planecli.formatters import error_console
 
 app = cyclopts.App(
     name="planecli",
     help="CLI for Plane.so project management.",
-    version=__version__,
+    version=full_version,
 )
 
 # Import and register sub-apps
