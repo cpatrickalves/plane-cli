@@ -220,7 +220,7 @@ planecli doc create --title "API Spec" --content "## Endpoints..." -p "Frontend"
 # Update a document
 planecli doc update "API Spec" --content "Updated content" -p "Frontend"
 
-# Delete a document
+# Delete a document (permanent)
 planecli doc delete "API Spec" -p "Frontend"
 ```
 

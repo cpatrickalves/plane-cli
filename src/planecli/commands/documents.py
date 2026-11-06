@@ -11,7 +11,9 @@ from plane.errors import PlaneError
 
 from planecli.api.async_sdk import run_sdk
 from planecli.api.client import get_client, get_workspace, handle_api_error
+from planecli.exceptions import APIError, AuthenticationError, PlaneCLIError
 from planecli.formatters import output, output_single
+from planecli.utils.body_html import body_to_html
 from planecli.utils.resolve import resolve_project_async
 
 doc_app = cyclopts.App(
@@ -39,12 +41,27 @@ def _enrich_doc(data: dict) -> dict:
     """Add convenience fields to a document dict."""
     desc_html = data.get("description_html") or ""
     if desc_html:
+        import html
         import re
 
-        data["content_text"] = re.sub(r"<[^>]+>", "", desc_html).strip()
+        # Turn line and block breaks back into newlines before dropping tags,
+        # so lines and paragraphs do not run together.
+        text = re.sub(r"<br\s*/?>", "\n", desc_html)
+        text = re.sub(r"</(?:p|pre)>", "\n\n", text)
+        data["content_text"] = html.unescape(re.sub(r"<[^>]+>", "", text)).strip()
     else:
         data["content_text"] = ""
     return data
+
+
+def _http_error(err: Exception, message: str) -> PlaneCLIError:
+    """Translate a requests failure into the CLI's exit-code contract."""
+    response = getattr(err, "response", None)
+    # A 4xx/5xx Response is falsy, so compare with None.
+    status = response.status_code if response is not None else None
+    if status == 401:
+        return AuthenticationError()
+    return APIError(f"{message}: {err}", status_code=status)
 
 
 @doc_app.command(name="list", alias="ls")
@@ -163,8 +180,12 @@ async def create(
         client = get_client()
         workspace = get_workspace()
 
-        description_html = f"<p>{content}</p>" if content is not None else "<p></p>"
-        page_data = CreatePage(name=title, description_html=description_html)
+        # description_html is a required SDK field — omitting it crashes
+        # CreatePage construction even for an empty body.
+        page_data = CreatePage(
+            name=title,
+            description_html=body_to_html(content) if content is not None else "<p></p>",
+        )
 
         if project:
             proj = await resolve_project_async(project, client, workspace)
@@ -216,8 +237,8 @@ async def update(
         update_payload: dict = {}
         if title:
             update_payload["name"] = title
-        if content:
-            update_payload["description_html"] = f"<p>{content}</p>"
+        if content is not None:
+            update_payload["description_html"] = body_to_html(content)
 
         if project:
             proj = await resolve_project_async(project, client, workspace)
@@ -245,7 +266,7 @@ async def delete(
     *,
     project: Annotated[str | None, Parameter(alias="-p")] = None,
 ) -> None:
-    """Delete (trash) a document.
+    """Permanently delete a document.
 
     Parameters
     ----------
@@ -276,8 +297,11 @@ async def delete(
             url = f"{config.base_url}/api/v1/workspaces/{workspace}/pages/{document}/"
 
         headers = {"X-Api-Key": config.api_key}
-        resp = await asyncio.to_thread(requests.delete, url, headers=headers, timeout=30)
-        resp.raise_for_status()
+        try:
+            resp = await asyncio.to_thread(requests.delete, url, headers=headers, timeout=30)
+            resp.raise_for_status()
+        except requests.RequestException as e:
+            raise _http_error(e, "the document was not deleted") from e
     except PlaneError as e:
         raise handle_api_error(e)
 
