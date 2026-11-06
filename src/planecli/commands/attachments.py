@@ -206,19 +206,19 @@ async def upload_embed_image(
 def _confirm_duplicate(name: str, existing: list[dict]) -> bool:
     """Ask before uploading a file whose name is already attached.
 
-    Interactive (TTY): prompt y/N. Non-interactive: refuse — scripts must
-    pass --force explicitly.
+    Interactive (TTY): prompt y/N on stderr, so stdout keeps only the --json
+    payload (ADR-0005). Non-interactive: refuse, so scripts and agents never
+    block on stdin and must pass --force explicitly (ADR-0008).
     """
     import sys
 
     if not sys.stdin.isatty():
         return False
-    try:
-        answer = input(
-            f"An attachment named '{name}' already exists ({len(existing)}x). Upload anyway? [y/N] "
-        )
-    except EOFError:
-        return False
+    sys.stderr.write(
+        f"An attachment named '{name}' already exists ({len(existing)}x). Upload anyway? [y/N] "
+    )
+    sys.stderr.flush()
+    answer = sys.stdin.readline()  # "" on EOF -> refuse
     return answer.strip().lower() in ("y", "yes")
 
 

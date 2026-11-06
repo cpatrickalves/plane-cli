@@ -432,3 +432,49 @@ async def test_upload_embed_image_raises_when_not_confirmed(mock_run, mock_cfg):
         pytest.raises(APIError),
     ):
         await upload_embed_image(None, "ws", "p1", "i1", "x.png")
+
+
+class _Tty:
+    """A stdin that is a terminal and answers with the given line."""
+
+    def __init__(self, line: str):
+        self._line = line
+
+    def isatty(self) -> bool:
+        return True
+
+    def readline(self) -> str:
+        return self._line
+
+
+def test_confirm_duplicate_prompts_on_stderr(monkeypatch, capsys):
+    from planecli.commands.attachments import _confirm_duplicate
+
+    monkeypatch.setattr("sys.stdin", _Tty("y\n"))
+
+    assert _confirm_duplicate("x.png", [{"id": "old-1"}]) is True
+
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert out.err == "An attachment named 'x.png' already exists (1x). Upload anyway? [y/N] "
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("y\n", True),
+        ("YES\n", True),
+        ("Yes\n", True),
+        ("n\n", False),
+        ("\n", False),
+        ("", False),  # EOF
+        ("maybe\n", False),
+    ],
+)
+def test_confirm_duplicate_answers(monkeypatch, capsys, line, expected):
+    from planecli.commands.attachments import _confirm_duplicate
+
+    monkeypatch.setattr("sys.stdin", _Tty(line))
+
+    assert _confirm_duplicate("x.png", [{"id": "old-1"}, {"id": "old-2"}]) is expected
+    assert capsys.readouterr().out == ""

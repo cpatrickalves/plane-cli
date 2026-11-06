@@ -68,3 +68,22 @@ command with a cascade is expected to follow the same pattern in code review.
 **Neutral:**
 - Revisit if the CLI ever adopts a uniform confirmation model; this ADR would then be
   superseded rather than amended per command.
+
+## Amendment (2026-11-06): duplicate-name confirmation on uploads
+
+`attachment attach` and `wi update -i` (when the image upload falls back to v1 attachments) ask
+before uploading a file whose name is already attached to the work item. Same-named attachments
+are easy to create by accident and hard to tell apart in the web UI, and deleting the wrong one
+breaks an image embedded in the description. This is the one exception to "no `planecli` command
+blocks on stdin", and it is bounded so that it keeps the reason behind the rule (never hang an
+automated caller):
+
+- A command may confirm only when `sys.stdin.isatty()` is true.
+- The prompt goes to stderr, never stdout, so `--json` output stays clean ([ADR-0005](0005-dual-output-contract.md)).
+- Without a TTY the command does not wait: it refuses with exit 5 and a message that names
+  `--force`. An answer other than `y`/`yes`, or EOF, also refuses.
+- `--force` skips the check. It is documented in `--help`, the README and the skill's command
+  reference.
+
+The prompt guards against a duplicate, not against data loss, so it does not change the decision
+above for deletes: they stay unprompted and documented.
