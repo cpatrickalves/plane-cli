@@ -17,7 +17,7 @@ def test_embed_html_uses_asset_id_as_src():
 
 def test_guess_mime_known_extension():
     assert _guess_mime("shot.png") == "image/png"
-    assert _guess_mime("notes.MD") == "text/markdown"
+    assert _guess_mime("notes.MD") == "text/plain"
 
 
 def test_guess_mime_unknown_extension_defaults_to_octet_stream():
@@ -116,12 +116,22 @@ async def test_attach_maps_api_401_to_exit_2(mock_resolve, _client, _ws, mock_ru
 def test_guess_mime_fallback_without_platform_table():
     # Some platforms ship no /etc/mime.types, so mimetypes knows no .md/.log.
     with patch("planecli.commands.attachments.mimetypes.guess_type", return_value=(None, None)):
-        assert _guess_mime("notes.md") == "text/markdown"
-        assert _guess_mime("notes.MD") == "text/markdown"
-        assert _guess_mime("README.markdown") == "text/markdown"
+        assert _guess_mime("notes.md") == "text/plain"
+        assert _guess_mime("notes.MD") == "text/plain"
+        assert _guess_mime("README.markdown") == "text/plain"
         assert _guess_mime("server.LOG") == "text/plain"
         assert _guess_mime("data.unknownext") == "application/octet-stream"
         assert _guess_mime("noext") == "application/octet-stream"
+
+
+def test_guess_mime_markdown_overrides_platform_table():
+    # Plane servers can reject text/markdown with 400 "Invalid file type.",
+    # so markdown goes up as text/plain even when the platform table knows it.
+    with patch(
+        "planecli.commands.attachments.mimetypes.guess_type", return_value=("text/markdown", None)
+    ):
+        assert _guess_mime("notes.md") == "text/plain"
+        assert _guess_mime("notes.markdown") == "text/plain"
 
 
 def test_enrich_attachment_does_not_mutate_input():

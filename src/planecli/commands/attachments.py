@@ -49,17 +49,19 @@ def _enrich_attachment(data: dict) -> dict:
     return data
 
 
-# Platforms without /etc/mime.types leave mimetypes blind to these.
-_EXTRA_MIME = {".md": "text/markdown", ".markdown": "text/markdown", ".log": "text/plain"}
+# Checked before the platform MIME table: some Plane servers reject
+# text/markdown with 400 "Invalid file type.", and platforms without
+# /etc/mime.types know none of these (recorded in the attachments section of
+# skills/references/command-reference.md).
+_TEXT_EXTENSIONS = {".md", ".markdown", ".log"}
 
 
 def _guess_mime(filename: str) -> str:
     """Guess a MIME type, defaulting to application/octet-stream."""
+    if os.path.splitext(filename)[1].lower() in _TEXT_EXTENSIONS:
+        return "text/plain"
     mime, _ = mimetypes.guess_type(filename)
-    if mime:
-        return mime
-    ext = os.path.splitext(filename)[1].lower()
-    return _EXTRA_MIME.get(ext, "application/octet-stream")
+    return mime or "application/octet-stream"
 
 
 def require_file(path: str) -> str:

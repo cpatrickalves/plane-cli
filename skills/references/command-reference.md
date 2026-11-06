@@ -326,9 +326,10 @@ planecli attachment ls ISSUE [--project/-p PROJECT] [--json]
   answer 401/403/404 to an API token there fall back to a v1 attachment, which `attachment ls`
   shows and which the duplicate-name check covers. The `img` tag stores only the asset UUID; the
   web editor resolves it.
-- MIME types come from the file extension; `.md`/`.markdown` (`text/markdown`) and `.log`
-  (`text/plain`) work even where the system has no MIME table. Unknown types upload as
-  `application/octet-stream`.
+- MIME types come from the file extension. `.md`, `.markdown` and `.log` always upload as
+  `text/plain`, because some Plane servers reject `text/markdown` with `400 Invalid file type.`
+  Unknown types upload as `application/octet-stream`. Other types a server's allow list
+  rejects fail with exit 4.
 
 ## Intake
 
