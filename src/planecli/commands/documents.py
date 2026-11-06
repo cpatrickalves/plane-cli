@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date
 from typing import Annotated
 
 import cyclopts
@@ -267,9 +266,7 @@ async def delete(
     *,
     project: Annotated[str | None, Parameter(alias="-p")] = None,
 ) -> None:
-    """Permanently delete a document: archive it, then delete it.
-
-    If the delete step fails, the document stays archived.
+    """Permanently delete a document.
 
     Parameters
     ----------
@@ -277,6 +274,8 @@ async def delete(
         Document UUID.
     project
         Project name/ID (required for project-level pages).
+
+    Note: Uses direct API call since the SDK doesn't support page deletion.
     """
     import requests
 
@@ -297,32 +296,12 @@ async def delete(
         else:
             url = f"{config.base_url}/api/v1/workspaces/{workspace}/pages/{document}/"
 
-        headers = {"X-Api-Key": config.api_key, "Content-Type": "application/json"}
-        # The API deletes only archived pages, and a 200 on the archive PATCH
-        # is not proof it applied, so check archived_at came back set
-        # (ADR-0007). Any non-null value means archived.
-        try:
-            resp = await asyncio.to_thread(
-                requests.patch,
-                url,
-                headers=headers,
-                json={"archived_at": date.today().isoformat()},
-                timeout=30,
-            )
-            resp.raise_for_status()
-            archived_at = resp.json().get("archived_at")
-        except requests.RequestException as e:
-            raise _http_error(e, "could not archive the document, so it was not deleted") from e
-        if not archived_at:
-            raise APIError(
-                "the document was not archived, so it was not deleted. "
-                "Archiving may require a higher project role."
-            )
+        headers = {"X-Api-Key": config.api_key}
         try:
             resp = await asyncio.to_thread(requests.delete, url, headers=headers, timeout=30)
             resp.raise_for_status()
         except requests.RequestException as e:
-            raise _http_error(e, "the document was archived but not deleted") from e
+            raise _http_error(e, "the document was not deleted") from e
     except PlaneError as e:
         raise handle_api_error(e)
 

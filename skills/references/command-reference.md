@@ -278,7 +278,7 @@ planecli doc update TITLE --content CONTENT -p PROJECT
 planecli doc delete TITLE -p PROJECT
 ```
 
-`doc delete` is permanent: it archives the document, checks the archive applied, then deletes it. If the delete step fails, the document stays archived. `--content` is plain text: blank lines split paragraphs, newlines become line breaks, URLs become links, and backticks and fences become code.
+`doc delete` is permanent. Some self-hosted servers answer 405 to `doc update` and `doc delete`. `--content` is plain text: blank lines split paragraphs, newlines become line breaks, URLs become links, and backticks and fences become code.
 
 ## Comments
 
