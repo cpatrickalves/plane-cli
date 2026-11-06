@@ -495,7 +495,7 @@ tests/
 
 ## Notes
 
-- The project is in **Alpha** (v0.5.1) — the command interface may change
+- The project is in **Alpha** (v0.6.0) — the command interface may change
 - The Documents (Pages) API in the Plane SDK has limited support; list, update, and delete use direct HTTP requests as a workaround
 - Compatible with Plane.so SaaS and self-hosted instances
 - The `~/.plane_api` file is saved with restricted permissions (`0600`)

@@ -7,11 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-06
+
 ### Added
 - `planecli intake` command group: `ls`, `create`, `accept`, `decline`, `delete`, `enabled` for project intake queues. Mutations take the work item UUID shown in the `Issue ID` column of `intake ls`. `accept`/`decline` require the project Admin role (the API silently ignores the change for lower roles, so the CLI verifies it and fails loudly). `delete` also permanently deletes the underlying work item for any status other than `accepted`
-- `planecli --version` shows the commit that runs when installed from git or as an editable checkout (for example `0.5.1+18c7682`)
+- `planecli --version` shows the commit that runs when installed from git or as an editable checkout (for example `0.6.0+5c93a2e`)
+
+### Changed
+- The bundled `planecli` agent skill (`skills/SKILL.md`) is shorter and now covers rate limits, partial creates, search, `-d` wrapping, and the fact that descriptions take raw HTML, not markdown. Command aliases moved to `skills/references/command-reference.md`
 
 ### Fixed
+- `project create` no longer fails with a validation error on every call: `CreateProject` now receives the required `identifier` at construction. Thanks to Jay Smith (#5)
 - `project create` without `-i` now derives the identifier from the first 5 ASCII letters of the name (accents folded, digits and symbols dropped), instead of the first 3 raw characters, which could include spaces and punctuation. Names with no usable letters fail with a validation error asking for `-i`, and a 409 on a derived identifier names the value and suggests `-i`. Thanks to Omar Adel (#8)
 - `document create` no longer crashes before the API call: `CreatePage` now receives the required `description_html` at construction (`<p></p>` when `--content` is omitted)
 - `doc create` and `doc update` convert `--content` to HTML: blank lines separate paragraphs, single newlines become line breaks, bare URLs become links, and backticks and fences become code. Before, the text went into one paragraph and lost its line breaks. `doc update --content ""` clears the content. Thanks to Liewzheng (#21)
