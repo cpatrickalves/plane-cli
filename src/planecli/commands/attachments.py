@@ -65,9 +65,7 @@ async def _resolve_item(issue: str, project: str | None):
         project_id = proj["id"]
         item = await resolve_work_item_async(issue, client, workspace, project_id)
     else:
-        item, project_id = await resolve_work_item_across_projects_async(
-            issue, client, workspace
-        )
+        item, project_id = await resolve_work_item_across_projects_async(issue, client, workspace)
     return item, project_id
 
 
@@ -147,9 +145,7 @@ async def upload_embed_image(
         },
     )
     if resp.status_code in (401, 403, 404):
-        att = await upload_attachment(
-            client, workspace, project_id, item_id, path, force=force
-        )
+        att = await upload_attachment(client, workspace, project_id, item_id, path, force=force)
         return att["id"]
     if resp.status_code != 200:
         raise APIError(f"Asset upload failed: HTTP {resp.status_code}")
@@ -200,8 +196,7 @@ def _confirm_duplicate(name: str, existing: list[dict]) -> bool:
         return False
     try:
         answer = input(
-            f"An attachment named '{name}' already exists "
-            f"({len(existing)}x). Upload anyway? [y/N] "
+            f"An attachment named '{name}' already exists ({len(existing)}x). Upload anyway? [y/N] "
         )
     except EOFError:
         return False
@@ -313,9 +308,7 @@ async def attach(
         item, project_id = await _resolve_item(issue, project)
         client = get_client()
         workspace = get_workspace()
-        mine = await upload_attachment(
-            client, workspace, project_id, item["id"], file, force=force
-        )
+        mine = await upload_attachment(client, workspace, project_id, item["id"], file, force=force)
     except PlaneError as e:
         raise handle_api_error(e)
 
@@ -323,9 +316,7 @@ async def attach(
     if json:
         output_single(data, [], as_json=True)
     else:
-        console.print(
-            f"[green]Attached {data['name']} ({data['size']} bytes) to {issue}.[/]"
-        )
+        console.print(f"[green]Attached {data['name']} ({data['size']} bytes) to {issue}.[/]")
 
 
 @attachment_app.command(name="list", alias="ls")
@@ -348,9 +339,7 @@ async def list_(
         item, project_id = await _resolve_item(issue, project)
         client = get_client()
         workspace = get_workspace()
-        endpoint = (
-            f"{workspace}/projects/{project_id}/work-items/{item['id']}/attachments"
-        )
+        endpoint = f"{workspace}/projects/{project_id}/work-items/{item['id']}/attachments"
         listed = await run_sdk(client.work_items.attachments._get, endpoint)
     except PlaneError as e:
         raise handle_api_error(e)

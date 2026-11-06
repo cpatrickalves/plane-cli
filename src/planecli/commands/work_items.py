@@ -617,7 +617,9 @@ async def create(
                 parts.append(embed_html(asset_id))
             await run_sdk(
                 client.work_items.update,
-                workspace, project_id, data["id"],
+                workspace,
+                project_id,
+                data["id"],
                 UpdateWorkItem(description_html="".join(parts)),
             )
             data["description_html"] = "".join(parts)
@@ -703,9 +705,11 @@ async def update(
         if image:
             from planecli.commands.attachments import embed_html, upload_embed_image
 
-            parts = [f"<p>{description}</p>"] if description else [
-                item_data.get("description_html") or ""
-            ]
+            parts = (
+                [f"<p>{description}</p>"]
+                if description
+                else [item_data.get("description_html") or ""]
+            )
             for path in image:
                 asset_id = await upload_embed_image(
                     client, workspace, project_id, item_id, path, force=force

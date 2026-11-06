@@ -185,8 +185,14 @@ async def test_upload_embed_image_prefers_v2_endpoint(mock_run, mock_cfg):
 
     mock_cfg.return_value = MagicMock(base_url="http://plane.local", api_key="k")
     mock_run.side_effect = [
-        _resp(200, {"asset_id": "a1", "asset_url": "/api/assets/v2/x/a1/",
-                    "upload_data": {"url": "u", "fields": {}}}),
+        _resp(
+            200,
+            {
+                "asset_id": "a1",
+                "asset_url": "/api/assets/v2/x/a1/",
+                "upload_data": {"url": "u", "fields": {}},
+            },
+        ),
         _resp(204),  # binary upload
         _resp(204),  # mark uploaded
         _resp(200),  # v1 readback confirms
@@ -209,9 +215,7 @@ async def test_upload_embed_image_prefers_v2_endpoint(mock_run, mock_cfg):
 @patch("planecli.commands.attachments.upload_attachment", new_callable=AsyncMock)
 @patch("planecli.api.client.get_config")
 @patch("planecli.commands.attachments.run_sdk", new_callable=AsyncMock)
-async def test_upload_embed_image_falls_back_to_v1_on_401(
-    mock_run, mock_cfg, mock_upload
-):
+async def test_upload_embed_image_falls_back_to_v1_on_401(mock_run, mock_cfg, mock_upload):
     from planecli.commands.attachments import upload_embed_image
 
     mock_cfg.return_value = MagicMock(base_url="http://plane.local", api_key="k")
@@ -253,8 +257,9 @@ async def test_upload_embed_image_raises_when_not_confirmed(mock_run, mock_cfg):
 
     mock_cfg.return_value = MagicMock(base_url="http://plane.local", api_key="k")
     mock_run.side_effect = [
-        _resp(200, {"asset_id": "a1", "asset_url": "/u",
-                    "upload_data": {"url": "u", "fields": {}}}),
+        _resp(
+            200, {"asset_id": "a1", "asset_url": "/u", "upload_data": {"url": "u", "fields": {}}}
+        ),
         _resp(204),
         _resp(204),
         _resp(404),  # readback: asset not visible -> write did not land
