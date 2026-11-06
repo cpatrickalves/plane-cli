@@ -601,14 +601,26 @@ async def test_upload_embed_image_request_error_is_api_error(mock_run, mock_cfg,
     from planecli.exceptions import APIError
 
     mock_cfg.return_value = MagicMock(base_url="http://plane.local", api_key="k")
-    mock_run.side_effect = requests.exceptions.ConnectionError("refused")
-    with (
-        patch("os.path.isfile", return_value=True),
-        patch("os.path.getsize", return_value=10),
-        pytest.raises(APIError, match="Upload request failed: refused") as exc,
-    ):
-        await upload_embed_image(None, "ws", "p1", "i1", "x.png")
-    assert exc.value.exit_code == 4
+    ok = [
+        _resp(200, {"asset_id": "a1", "upload_data": {"url": "http://s3.local", "fields": {}}}),
+        _resp(204),  # storage POST
+        _resp(204),  # PATCH is_uploaded
+        _resp(200),  # read-back
+    ]
+    # Fail each of the four raw calls in turn: register, storage POST, PATCH, read-back.
+    for failing in range(4):
+        side = ok[:failing] + [requests.exceptions.ReadTimeout("read timed out")]
+        mock_run.reset_mock()
+        mock_run.side_effect = side
+        with (
+            patch("os.path.isfile", return_value=True),
+            patch("os.path.getsize", return_value=10),
+            patch("planecli.commands.attachments.open", MagicMock(), create=True),
+            pytest.raises(APIError, match="Upload request failed: read timed out") as exc,
+        ):
+            await upload_embed_image(None, "ws", "p1", "i1", "x.png")
+        assert exc.value.exit_code == 4
+        assert mock_run.call_count == failing + 1
 
 
 @patch("planecli.commands.attachments.run_sdk", new_callable=AsyncMock)
