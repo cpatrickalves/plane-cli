@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - `project create` without `-i` now derives the identifier from the first 5 ASCII letters of the name (accents folded, digits and symbols dropped), instead of the first 3 raw characters, which could include spaces and punctuation. Names with no usable letters fail with a validation error asking for `-i`, and a 409 on a derived identifier names the value and suggests `-i`. Thanks to Omar Adel (#8)
 - `document create` no longer crashes before the API call: `CreatePage` now receives the required `description_html` at construction (`<p></p>` when `--content` is omitted)
+- `doc create` and `doc update` convert `--content` to HTML: blank lines separate paragraphs, single newlines become line breaks, bare URLs become links, and backticks and fences become code. Before, the text went into one paragraph and lost its line breaks. `doc update --content ""` clears the content. Thanks to Liewzheng (#21)
+- `doc delete` archives the document first and checks the archive applied, because the API deletes only archived pages. It fails with exit code 4 when the archive did not apply, and it deletes permanently. If the delete step fails, the document stays archived and the error says so. Thanks to Liewzheng (#21)
+- `doc show`, `create`, `update` and `list` keep line and paragraph breaks in the `Content` field (`content_text` in `--json`) and show entities such as `&lt;` as text
 
 ## [0.5.1] - 2026-07-03
 
