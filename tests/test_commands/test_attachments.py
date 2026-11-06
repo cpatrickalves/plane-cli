@@ -478,3 +478,49 @@ def test_confirm_duplicate_answers(monkeypatch, capsys, line, expected):
 
     assert _confirm_duplicate("x.png", [{"id": "old-1"}, {"id": "old-2"}]) is expected
     assert capsys.readouterr().out == ""
+
+
+@patch("planecli.commands.attachments._guess_mime", return_value="image/png")
+@patch("planecli.commands.attachments.run_sdk", new_callable=AsyncMock)
+async def test_presigned_post_has_timeout_v1(mock_run, _mime):
+    # A stalled storage server must not hang the CLI (or hold a run_sdk slot).
+    from planecli.commands.attachments import upload_attachment
+
+    mock_run.side_effect = _upload_side_effects(
+        [{"id": "asset-1", "attributes": {"name": "x.png"}, "is_uploaded": True}]
+    )
+    with (
+        patch("os.path.isfile", return_value=True),
+        patch("os.path.getsize", return_value=10),
+        patch("builtins.open", MagicMock()),
+    ):
+        await upload_attachment(MagicMock(), "ws", "p1", "i1", "x.png")
+
+    post_call = mock_run.call_args_list[2]
+    assert post_call.args[1] == "http://uploads.local"
+    assert post_call.kwargs["timeout"] == 300
+
+
+@patch("planecli.commands.attachments._guess_mime", return_value="image/png")
+@patch("planecli.api.client.get_config")
+@patch("planecli.commands.attachments.run_sdk", new_callable=AsyncMock)
+async def test_presigned_post_has_timeout_v2(mock_run, mock_cfg, _mime):
+    from planecli.commands.attachments import upload_embed_image
+
+    mock_cfg.return_value = MagicMock(base_url="http://plane.local", api_key="k")
+    mock_run.side_effect = [
+        _resp(200, {"asset_id": "a1", "upload_data": {"url": "http://s3.local", "fields": {}}}),
+        _resp(204),
+        _resp(204),
+        _resp(200),
+    ]
+    with (
+        patch("os.path.isfile", return_value=True),
+        patch("os.path.getsize", return_value=10),
+        patch("builtins.open", MagicMock()),
+    ):
+        await upload_embed_image(None, "ws", "p1", "i1", "x.png")
+
+    post_call = mock_run.call_args_list[1]
+    assert post_call.args[1] == "http://s3.local"
+    assert post_call.kwargs["timeout"] == 300

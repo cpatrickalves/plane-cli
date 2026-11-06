@@ -98,6 +98,13 @@ def embed_html(asset_id: str) -> str:
     return f'<p><img src="{asset_id}" /></p>'
 
 
+# Storage servers can be slow for large files; a stalled one must not hang the
+# CLI or hold a run_sdk slot forever (ADR-0001).
+_UPLOAD_TIMEOUT = 300  # seconds
+
+
+# NOTE: the _app_* helpers call /api/assets/v2/ and /api/v1/.../assets/ with
+# raw requests + X-Api-Key, because the SDK covers neither (ADR-0003).
 def _app_post_json(url: str, api_key: str, payload: dict):
     """POST JSON to a session-only app endpoint, authenticating with an API token."""
     import requests
@@ -111,6 +118,7 @@ def _app_post_json(url: str, api_key: str, payload: dict):
 
 
 def _app_patch_json(url: str, api_key: str, payload: dict | None = None):
+    # NOTE: raw requests, see the _app_* NOTE above (ADR-0003).
     import requests
 
     return requests.patch(
@@ -122,6 +130,7 @@ def _app_patch_json(url: str, api_key: str, payload: dict | None = None):
 
 
 def _app_get(url: str, api_key: str):
+    # NOTE: raw requests, see the _app_* NOTE above (ADR-0003).
     import requests
 
     return requests.get(url, headers={"X-Api-Key": api_key}, timeout=60)
@@ -134,16 +143,14 @@ async def upload_embed_image(
 
     Prefers the native app asset endpoint (entity_type=ISSUE_DESCRIPTION — the
     image renders inline and does not clutter the attachment list). Servers
-    whose app endpoints are session-only answer 401/403/404, in which case we
-    fall back to a v1 ISSUE_ATTACHMENT upload (see PLANE-4 for the server-side
-    fix that removes the need for the fallback).
+    whose app endpoints accept only a browser session answer 401/403/404 to an
+    API token, in which case we fall back to a v1 ISSUE_ATTACHMENT upload
+    (recorded in ADR-0003).
     """
     from planecli.api.client import get_config
 
     cfg = get_config()
-    path = os.path.expanduser(path)
-    if not os.path.isfile(path):
-        raise ValidationError(f"File not found: {path}")
+    path = require_file(path)
     name = os.path.basename(path)
     size = os.path.getsize(path)
     mime = _guess_mime(name)
@@ -173,12 +180,15 @@ async def upload_embed_image(
     upload = created["upload_data"]
     import requests
 
+    # NOTE: direct POST to the presigned storage URL; the signature is in the
+    # form fields, so no SDK call and no X-Api-Key (ADR-0003).
     with open(path, "rb") as fh:
         up = await run_sdk(
             requests.post,
             upload["url"],
             data=upload["fields"],
             files={"file": (name, fh, mime)},
+            timeout=_UPLOAD_TIMEOUT,
         )
     if up.status_code not in (200, 201, 204):
         raise APIError(f"File upload failed: HTTP {up.status_code}")
@@ -232,9 +242,7 @@ async def upload_attachment(
     the duplicate-name prompt), APIError if the server does not confirm the
     upload (see ADR-0007).
     """
-    path = os.path.expanduser(path)
-    if not os.path.isfile(path):
-        raise ValidationError(f"File not found: {path}")
+    path = require_file(path)
     name = os.path.basename(path)
     size = os.path.getsize(path)
     endpoint = f"{workspace}/projects/{project_id}/work-items/{item_id}/attachments"
@@ -242,6 +250,8 @@ async def upload_attachment(
     # Guard against duplicate uploads: same-named attachments are easy to
     # create by accident and hard to tell apart in the web UI (deleting the
     # wrong one breaks embedded images). Confirm before adding another.
+    # NOTE: raw _get, because the typed attachments.list returns [] when the
+    # API answers with a paginated {"results": [...]} dict (ADR-0003).
     listed = await run_sdk(client.work_items.attachments._get, endpoint)
     items = listed if isinstance(listed, list) else listed.get("results", [])
     existing = [
@@ -270,8 +280,9 @@ async def upload_attachment(
     asset_id = created["asset_id"]
     upload = created["upload_data"]
 
-    # 2. Push the bytes to the presigned URL. The signature lives in the
-    # form fields — no X-Api-Key header here.
+    # 2. Push the bytes to the presigned URL.
+    # NOTE: direct POST to storage; the signature lives in the form fields, so
+    # no X-Api-Key header here (ADR-0003).
     import requests
 
     with open(path, "rb") as fh:
@@ -280,12 +291,14 @@ async def upload_attachment(
             upload["url"],
             data=upload["fields"],
             files={"file": (name, fh, mime)},
+            timeout=_UPLOAD_TIMEOUT,
         )
     if resp.status_code not in (200, 201, 204):
         raise APIError(f"File upload failed: HTTP {resp.status_code}")
 
     # 3. Mark the attachment uploaded, then read it back — a 2xx on the
     # PATCH is not proof the write landed (see ADR-0007).
+    # NOTE: raw _patch and _get, as above (ADR-0003).
     await run_sdk(
         client.work_items.attachments._patch,
         f"{endpoint}/{asset_id}",
@@ -361,6 +374,8 @@ async def list_(
         client = get_client()
         workspace = get_workspace()
         endpoint = f"{workspace}/projects/{project_id}/work-items/{item['id']}/attachments"
+        # NOTE: raw _get, because the typed attachments.list returns [] for a
+        # paginated {"results": [...]} response (ADR-0003).
         listed = await run_sdk(client.work_items.attachments._get, endpoint)
     except PlaneError as e:
         raise handle_api_error(e)

@@ -32,6 +32,17 @@ The three escape hatches:
 2. **Documents (Pages) — direct HTTP.** For `list`, `update`, and `delete`, `commands/documents.py` calls the Plane HTTP API directly with `requests` and an `X-Api-Key` header through `asyncio.to_thread`. These calls run in a thread but deliberately skip `run_sdk`, so they get no concurrency semaphore and no retries from [ADR-0001](0001-async-wrapper-over-sync-sdk.md). `show` and `create` use the SDK through `run_sdk`.
 3. **Estimate points — derive from work items.** `cached_list_estimate_points` fetches work items with `expand=estimate_point` (again via raw `_get()`, since expansion turns `estimate_point` from a string into a dict and breaks SDK validation) and collects the unique `{id, value}` pairs. `resolve_estimate_point_async` then maps a requested value to its UUID.
 
+### Amendment (2026-11-06): attachments and description assets
+
+A fourth escape hatch arrived with `commands/attachments.py`:
+
+4. **Attachments and description assets — raw resource methods and direct HTTP.**
+   - Listing, registering, marking and reading back v1 attachments uses `client.work_items.attachments._get`/`_post`/`_patch`. The typed `attachments.list` returns `[]` when the API answers with a paginated `{"results": [...]}` dict, which would hide attachments, and the typed create drops `upload_data`, the presigned form the upload needs.
+   - Description images go through the app endpoint `/api/assets/v2/workspaces/<ws>/projects/<project>/` (entity type `ISSUE_DESCRIPTION`) and are read back through `/api/v1/workspaces/<ws>/assets/<id>/`, with `requests` and an `X-Api-Key` header. The SDK covers neither. Servers whose app endpoints accept only a browser session answer 401/403/404 to an API token; the command then falls back to a v1 attachment upload, and the asset UUID works the same in the description.
+   - The file bytes are POSTed to the presigned storage URL directly, with the signature in the form fields, no API key, and a 300-second timeout.
+
+   All of these run through `run_sdk`, so they get the concurrency limit and retries of [ADR-0001](0001-async-wrapper-over-sync-sdk.md). Each call site carries a `NOTE:`.
+
 ## Consequences
 
 **Positive:**
@@ -47,4 +58,4 @@ The three escape hatches:
 
 ## Confirmation
 
-Work item bypasses are marked with a `NOTE:` comment at their call sites. To list every bypass, grep for `_get(` in `utils/resolve.py` and `cache.py`, and for the `X-Api-Key` header in `commands/documents.py`. If a future `plane-sdk` release fixes `WorkItemDetail` validation or adds Pages/estimate-point endpoints, those call sites are the checklist for removing the workarounds.
+Work item bypasses are marked with a `NOTE:` comment at their call sites. To list every bypass, grep for `_get(` in `utils/resolve.py` and `cache.py`, for the `X-Api-Key` header in `commands/documents.py`, and for `NOTE:` in `commands/attachments.py`. If a future `plane-sdk` release fixes `WorkItemDetail` validation or adds Pages/estimate-point endpoints, those call sites are the checklist for removing the workarounds.
