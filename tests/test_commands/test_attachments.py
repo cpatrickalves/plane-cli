@@ -9,6 +9,15 @@ import pytest
 from planecli.commands.attachments import _enrich_attachment, _guess_mime, embed_html
 
 
+@pytest.fixture(autouse=True)
+def _load_mime_table():
+    # Load the platform MIME table before a test patches os.path.isfile or
+    # open; loading it under those patches fails or loops forever.
+    import mimetypes
+
+    mimetypes.init()
+
+
 def test_embed_html_uses_asset_id_as_src():
     # The web editor stores the asset UUID in src and resolves it at render
     # time — a full URL here breaks image loading.
@@ -258,14 +267,22 @@ async def test_attach_uploads_then_marks_uploaded(mock_resolve, mock_client, _ws
     with (
         patch("os.path.isfile", return_value=True),
         patch("os.path.getsize", return_value=10),
-        patch("builtins.open", MagicMock()),
+        patch("planecli.commands.attachments.open", MagicMock(), create=True),
     ):
         await attach("ABC-1", "x.png", json=True)
 
+    client = mock_client.return_value
+    register = mock_run.call_args_list[1]
+    assert register.args[0] is client.work_items.attachments._post
+    assert register.args[2] == {"name": "x.png", "type": "image/png", "size": 10}
     # binary push went to the presigned URL with form fields, not the API
     post_call = mock_run.call_args_list[2]
     assert post_call.args[1] == "http://uploads.local"
     assert post_call.kwargs["data"] == {"key": "k"}
+    mark = mock_run.call_args_list[3]
+    assert mark.args[0] is client.work_items.attachments._patch
+    assert mark.args[1].endswith("/attachments/asset-1")
+    assert mark.args[2] == {"is_uploaded": True}
 
 
 @patch("planecli.commands.attachments.run_sdk", new_callable=AsyncMock)
@@ -286,12 +303,15 @@ async def test_attach_raises_when_server_does_not_confirm(mock_resolve, _client,
     with (
         patch("os.path.isfile", return_value=True),
         patch("os.path.getsize", return_value=10),
-        patch("builtins.open", MagicMock()),
-        pytest.raises(APIError),
+        patch("planecli.commands.attachments.open", MagicMock(), create=True),
+        pytest.raises(
+            APIError, match="Attachment was not confirmed by the server after upload."
+        ) as exc,
     ):
         from planecli.commands.attachments import attach
 
         await attach("ABC-1", "x.png")
+    assert exc.value.exit_code == 4
 
 
 @patch("planecli.commands.attachments._guess_mime", return_value="image/png")
@@ -304,13 +324,20 @@ async def test_upload_attachment_cancels_on_duplicate_name(mock_run, _mime):
         [{"id": "old-1", "attributes": {"name": "x.png"}, "is_uploaded": True}],
     ]
 
+    import re
+
+    msg = (
+        "Upload cancelled: 'x.png' is already attached (1x). Re-run with --force to upload anyway."
+    )
     with (
         patch("os.path.isfile", return_value=True),
         patch("os.path.getsize", return_value=10),
-        pytest.raises(ValidationError, match="already attached"),
+        patch("sys.stdin", MagicMock(isatty=MagicMock(return_value=False))),
+        pytest.raises(ValidationError, match=re.escape(msg)) as exc,
     ):
-        # not a TTY in tests -> prompt refuses -> ValidationError
         await upload_attachment(MagicMock(), "ws", "p1", "i1", "x.png")
+    assert exc.value.exit_code == 5
+    assert mock_run.call_count == 1  # only the duplicate check; nothing registered
 
 
 @patch("planecli.commands.attachments._guess_mime", return_value="image/png")
@@ -329,7 +356,7 @@ async def test_upload_attachment_force_skips_duplicate_check(mock_run, _mime):
     with (
         patch("os.path.isfile", return_value=True),
         patch("os.path.getsize", return_value=10),
-        patch("builtins.open", MagicMock()),
+        patch("planecli.commands.attachments.open", MagicMock(), create=True),
     ):
         result = await upload_attachment(MagicMock(), "ws", "p1", "i1", "x.png", force=True)
 
@@ -371,7 +398,7 @@ async def test_upload_embed_image_prefers_v2_endpoint(mock_run, mock_cfg):
     with (
         patch("os.path.isfile", return_value=True),
         patch("os.path.getsize", return_value=10),
-        patch("builtins.open", MagicMock()),
+        patch("planecli.commands.attachments.open", MagicMock(), create=True),
     ):
         asset_id = await upload_embed_image(None, "ws", "p1", "i1", "x.png")
 
@@ -382,24 +409,26 @@ async def test_upload_embed_image_prefers_v2_endpoint(mock_run, mock_cfg):
     assert first.args[2] == "k"
 
 
+@pytest.mark.parametrize("status", [401, 403, 404])
 @patch("planecli.commands.attachments.upload_attachment", new_callable=AsyncMock)
 @patch("planecli.api.client.get_config")
 @patch("planecli.commands.attachments.run_sdk", new_callable=AsyncMock)
-async def test_upload_embed_image_falls_back_to_v1_on_401(mock_run, mock_cfg, mock_upload):
+async def test_upload_embed_image_falls_back_to_v1(mock_run, mock_cfg, mock_upload, status):
     from planecli.commands.attachments import upload_embed_image
 
     mock_cfg.return_value = MagicMock(base_url="http://plane.local", api_key="k")
-    mock_run.side_effect = [_resp(401)]
+    mock_run.side_effect = [_resp(status)]
     mock_upload.return_value = {"id": "a9"}
 
     with (
         patch("os.path.isfile", return_value=True),
         patch("os.path.getsize", return_value=10),
     ):
-        asset_id = await upload_embed_image(None, "ws", "p1", "i1", "x.png")
+        asset_id = await upload_embed_image(None, "ws", "p1", "i1", "x.png", force=True)
 
     assert asset_id == "a9"
     mock_upload.assert_awaited_once()
+    assert mock_upload.call_args.kwargs["force"] is True
 
 
 @patch("planecli.api.client.get_config")
@@ -438,7 +467,7 @@ async def test_upload_embed_image_raises_when_not_confirmed(mock_run, mock_cfg):
     with (
         patch("os.path.isfile", return_value=True),
         patch("os.path.getsize", return_value=10),
-        patch("builtins.open", MagicMock()),
+        patch("planecli.commands.attachments.open", MagicMock(), create=True),
         pytest.raises(APIError),
     ):
         await upload_embed_image(None, "ws", "p1", "i1", "x.png")
@@ -502,7 +531,7 @@ async def test_presigned_post_has_timeout_v1(mock_run, _mime):
     with (
         patch("os.path.isfile", return_value=True),
         patch("os.path.getsize", return_value=10),
-        patch("builtins.open", MagicMock()),
+        patch("planecli.commands.attachments.open", MagicMock(), create=True),
     ):
         await upload_attachment(MagicMock(), "ws", "p1", "i1", "x.png")
 
@@ -527,10 +556,206 @@ async def test_presigned_post_has_timeout_v2(mock_run, mock_cfg, _mime):
     with (
         patch("os.path.isfile", return_value=True),
         patch("os.path.getsize", return_value=10),
-        patch("builtins.open", MagicMock()),
+        patch("planecli.commands.attachments.open", MagicMock(), create=True),
     ):
         await upload_embed_image(None, "ws", "p1", "i1", "x.png")
 
     post_call = mock_run.call_args_list[1]
     assert post_call.args[1] == "http://s3.local"
     assert post_call.kwargs["timeout"] == 300
+
+
+# --- appended after verification ------------------------------------------
+
+
+@patch("planecli.commands.attachments._guess_mime", return_value="image/png")
+@patch("planecli.commands.attachments.run_sdk", new_callable=AsyncMock)
+async def test_upload_attachment_request_error_is_api_error(mock_run, _mime):
+    import requests
+
+    from planecli.commands.attachments import upload_attachment
+    from planecli.exceptions import APIError
+
+    mock_run.side_effect = [
+        [],
+        {"asset_id": "asset-1", "upload_data": {"url": "u", "fields": {}}},
+        requests.exceptions.ReadTimeout("read timed out"),
+    ]
+    with (
+        patch("os.path.isfile", return_value=True),
+        patch("os.path.getsize", return_value=10),
+        patch("planecli.commands.attachments.open", MagicMock(), create=True),
+        pytest.raises(APIError, match="Upload request failed: read timed out") as exc,
+    ):
+        await upload_attachment(MagicMock(), "ws", "p1", "i1", "x.png")
+    assert exc.value.exit_code == 4
+
+
+@patch("planecli.commands.attachments._guess_mime", return_value="image/png")
+@patch("planecli.api.client.get_config")
+@patch("planecli.commands.attachments.run_sdk", new_callable=AsyncMock)
+async def test_upload_embed_image_request_error_is_api_error(mock_run, mock_cfg, _mime):
+    import requests
+
+    from planecli.commands.attachments import upload_embed_image
+    from planecli.exceptions import APIError
+
+    mock_cfg.return_value = MagicMock(base_url="http://plane.local", api_key="k")
+    mock_run.side_effect = requests.exceptions.ConnectionError("refused")
+    with (
+        patch("os.path.isfile", return_value=True),
+        patch("os.path.getsize", return_value=10),
+        pytest.raises(APIError, match="Upload request failed: refused") as exc,
+    ):
+        await upload_embed_image(None, "ws", "p1", "i1", "x.png")
+    assert exc.value.exit_code == 4
+
+
+@patch("planecli.commands.attachments.run_sdk", new_callable=AsyncMock)
+@patch("planecli.commands.attachments.get_workspace", return_value="ws")
+@patch("planecli.commands.attachments.get_client")
+@patch(
+    "planecli.commands.attachments.resolve_work_item_across_projects_async",
+    new_callable=AsyncMock,
+)
+async def test_attach_raises_when_asset_missing_from_read_back(mock_resolve, _c, _w, mock_run):
+    from planecli.commands.attachments import attach
+    from planecli.exceptions import APIError
+
+    mock_resolve.return_value = ({"id": "item-1"}, "proj-1")
+    mock_run.side_effect = _upload_side_effects(
+        [{"id": "other-asset", "attributes": {"name": "x.png"}, "is_uploaded": True}]
+    )
+    with (
+        patch("os.path.isfile", return_value=True),
+        patch("os.path.getsize", return_value=10),
+        patch("planecli.commands.attachments.open", MagicMock(), create=True),
+        pytest.raises(APIError, match="Attachment was not confirmed by the server after upload."),
+    ):
+        await attach("ABC-1", "x.png")
+
+
+def _dup_side_effects():
+    return [
+        [{"id": "old-1", "attributes": {"name": "x.png"}, "is_uploaded": True}],
+        {"asset_id": "asset-1", "upload_data": {"url": "u", "fields": {}}},
+        MagicMock(status_code=204),
+        None,
+        [{"id": "asset-1", "attributes": {"name": "x.png"}, "is_uploaded": True}],
+    ]
+
+
+@pytest.mark.parametrize(("answer", "uploads"), [("y\n", True), ("\n", False)])
+@patch("planecli.commands.attachments._guess_mime", return_value="image/png")
+@patch("planecli.commands.attachments.run_sdk", new_callable=AsyncMock)
+async def test_upload_attachment_tty_answer(mock_run, _mime, monkeypatch, answer, uploads):
+    from planecli.commands.attachments import upload_attachment
+    from planecli.exceptions import ValidationError
+
+    monkeypatch.setattr("sys.stdin", _Tty(answer))
+    mock_run.side_effect = _dup_side_effects()
+    with (
+        patch("os.path.isfile", return_value=True),
+        patch("os.path.getsize", return_value=10),
+        patch("planecli.commands.attachments.open", MagicMock(), create=True),
+    ):
+        if uploads:
+            result = await upload_attachment(MagicMock(), "ws", "p1", "i1", "x.png")
+            assert result["id"] == "asset-1"
+        else:
+            with pytest.raises(ValidationError, match="Upload cancelled"):
+                await upload_attachment(MagicMock(), "ws", "p1", "i1", "x.png")
+            assert mock_run.call_count == 1  # nothing registered
+
+
+@patch("planecli.commands.attachments._guess_mime", return_value="image/png")
+@patch("planecli.commands.attachments.run_sdk", new_callable=AsyncMock)
+async def test_upload_attachment_ignores_deleted_duplicate(mock_run, _mime):
+    from planecli.commands.attachments import upload_attachment
+
+    side = _dup_side_effects()
+    side[0] = {"results": [{"id": "old-1", "attributes": {"name": "x.png"}, "is_deleted": True}]}
+    mock_run.side_effect = side
+    with (
+        patch("os.path.isfile", return_value=True),
+        patch("os.path.getsize", return_value=10),
+        patch("planecli.commands.attachments.open", MagicMock(), create=True),
+        patch("sys.stdin", MagicMock(isatty=MagicMock(return_value=False))),
+    ):
+        result = await upload_attachment(MagicMock(), "ws", "p1", "i1", "x.png")
+    assert result["id"] == "asset-1"
+
+
+async def test_ls_hides_deleted(capsys):
+    import json
+
+    out = await _run_ls(
+        {
+            "results": [
+                _att("a1", "a.png", "image/png", 1),
+                {**_att("a2", "b.png", "image/png", 2), "is_deleted": True},
+            ]
+        },
+        capsys,
+    )
+    assert [r["id"] for r in json.loads(out.out)] == ["a1"]
+
+
+def test_enrich_attachment_keeps_top_level_name():
+    result = _enrich_attachment(
+        {"id": "a1", "name": "top.png", "type": "image/png", "attributes": {}}
+    )
+    assert (result["name"], result["type"]) == ("top.png", "image/png")
+
+
+def test_guess_mime_bare_extension_name():
+    assert _guess_mime(".md") == "text/plain"
+    assert _guess_mime("build.log") == "text/plain"
+
+
+@patch("planecli.commands.attachments.run_sdk", new_callable=AsyncMock)
+@patch("planecli.commands.attachments.get_workspace", return_value="ws")
+@patch("planecli.commands.attachments.get_client")
+@patch("planecli.commands.attachments._resolve_item", new_callable=AsyncMock)
+async def test_attach_maps_api_403_to_exit_4(mock_resolve, _client, _ws, mock_run, tmp_path):
+    from plane.errors import HttpError
+
+    from planecli.exceptions import APIError
+
+    f = tmp_path / "x.png"
+    f.write_bytes(b"png")
+    mock_resolve.return_value = ({"id": "item-1"}, "proj-1")
+    mock_run.side_effect = HttpError("Forbidden", status_code=403)
+    with pytest.raises(APIError) as exc:
+        await _run_attach(str(f))
+    assert exc.value.exit_code == 4
+
+
+@patch("planecli.commands.attachments.run_sdk", new_callable=AsyncMock)
+@patch("planecli.commands.attachments.get_client")
+@patch("planecli.commands.attachments._resolve_item", new_callable=AsyncMock)
+async def test_attach_unresolved_item_exits_3(mock_resolve, _client, mock_run, tmp_path):
+    from planecli.exceptions import ResourceNotFoundError
+
+    f = tmp_path / "x.png"
+    f.write_bytes(b"png")
+    mock_resolve.side_effect = ResourceNotFoundError("Work item", "ABC-999")
+    with pytest.raises(ResourceNotFoundError) as exc:
+        await _run_attach(str(f))
+    assert exc.value.exit_code == 3
+    mock_run.assert_not_called()
+
+
+async def test_ls_maps_api_401_to_exit_2():
+    from plane.errors import HttpError
+
+    from planecli.commands.attachments import list_
+    from planecli.exceptions import AuthenticationError
+
+    p_resolve, p_client, p_ws, p_run = _ls_patches()
+    with p_resolve as mock_resolve, p_client, p_ws, p_run as mock_run:
+        mock_resolve.return_value = ({"id": "item-1"}, "proj-1")
+        mock_run.side_effect = HttpError("Unauthorized", status_code=401)
+        with pytest.raises(AuthenticationError) as exc:
+            await list_("ABC-1")
+    assert exc.value.exit_code == 2

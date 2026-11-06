@@ -584,6 +584,12 @@ async def create(
             if label_ids:
                 create_data.labels = label_ids
 
+        # Resolve the module before creating, so a typo in --module leaves no
+        # item behind for a retry to duplicate.
+        module_data = (
+            await resolve_module_async(module, client, workspace, project_id) if module else None
+        )
+
         item = await run_sdk(client.work_items.create, workspace, project_id, create_data)
         raw = item.model_dump()
 
@@ -593,8 +599,7 @@ async def create(
         await invalidate_resource("work_items", workspace, project_id)
 
         # Add to module if specified
-        if module:
-            module_data = await resolve_module_async(module, client, workspace, project_id)
+        if module_data:
             await run_sdk(
                 client.modules.add_work_items,
                 workspace,

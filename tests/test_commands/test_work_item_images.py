@@ -190,3 +190,41 @@ def test_wi_update_force_help_mentions_v1_fallback():
     force_help = doc.split("force\n", 1)[1]
     assert "v1" in force_help
     assert "fall" in force_help.lower()
+
+
+# --- appended after verification ------------------------------------------
+
+
+async def test_wi_update_image_passes_force(wi_update_env, tmp_path):
+    wi_update_env["run_sdk"].side_effect = _Sdk(wi_update_env["client"], _item()).call
+    wi_update_env["upload"].return_value = "asset-a"
+
+    await update("ABC-5", image=[_img(tmp_path)], force=True)
+
+    assert wi_update_env["upload"].call_args.kwargs["force"] is True
+
+
+async def test_wi_create_unresolved_module_creates_nothing(wi_env, tmp_path):
+    with patch(f"{WI}.resolve_module_async", new_callable=AsyncMock) as resolve_module:
+        resolve_module.side_effect = ResourceNotFoundError("Module", "Sprnt")
+        with pytest.raises(ResourceNotFoundError):
+            await create("Bug", project="Frontend", module="Sprnt", image=[_img(tmp_path)])
+
+    wi_env["run_sdk"].assert_not_called()
+    wi_env["upload"].assert_not_called()
+
+
+async def test_wi_create_image_table_output(wi_env, tmp_path):
+    from rich.console import Console
+
+    wi_env["run_sdk"].side_effect = _Sdk(wi_env["client"], _item()).call
+    wi_env["upload"].return_value = "asset-a"
+    record = Console(record=True, width=120)
+
+    with patch("planecli.formatters.console", record):
+        await create("Bug", project="Frontend", priority="high", image=[_img(tmp_path)])
+
+    text = record.export_text()
+    assert "ABC-5" in text
+    assert "ABC-ABC" not in text
+    assert "high" in text

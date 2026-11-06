@@ -313,7 +313,8 @@ planecli attachment ls ISSUE [--project/-p PROJECT] [--json]
 
 - `attach` checks that `FILE` exists before any API call (exit 5 if not), uploads it in three
   steps (register, push to the presigned storage URL, mark uploaded), and reads it back: exit 4
-  if the server does not confirm the upload.
+  if the server does not confirm the upload, or if storage times out (300 s) or refuses the
+  connection.
 - **Duplicate names.** If a file with the same name is already attached, `attach` asks
   `Upload anyway? [y/N]` on stderr when stdin is a terminal. Without a terminal it refuses with
   exit 5 and names `--force`, so a script never blocks on stdin

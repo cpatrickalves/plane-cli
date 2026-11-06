@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `planecli attachment` command group: `attach` uploads a file to a work item and confirms the upload by reading it back; `ls` lists a work item's attachments. If a file with the same name is already attached, `attach` asks on stderr when run in a terminal and refuses with exit 5 otherwise; `--force` uploads anyway. Thanks to Liewzheng (#11)
 - Repeatable `-i/--image` on `wi create` and `wi update` uploads images and appends them to the description. Uploads use the app's description-asset endpoint and fall back to a v1 attachment when the server rejects API tokens there. All paths are checked before anything is written, and `wi update` uploads only after its other options resolved (#11)
 
+### Fixed
+- `wi create --module` resolves the module before creating the work item, so a mistyped module name no longer leaves an item behind that a retry would duplicate
+
 ## [0.6.0] - 2026-11-06
 
 ### Added

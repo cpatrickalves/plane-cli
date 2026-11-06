@@ -43,8 +43,8 @@ def _enrich_attachment(data: dict) -> dict:
     """
     data = {**data}
     attrs = data.get("attributes") or {}
-    data["name"] = attrs.get("name", "")
-    data["type"] = attrs.get("type", "")
+    data["name"] = attrs.get("name") or data.get("name") or ""
+    data["type"] = attrs.get("type") or data.get("type") or ""
     data["size"] = data.get("size") if data.get("size") is not None else attrs.get("size")
     return data
 
@@ -53,15 +53,29 @@ def _enrich_attachment(data: dict) -> dict:
 # text/markdown with 400 "Invalid file type.", and platforms without
 # /etc/mime.types know none of these (recorded in the attachments section of
 # skills/references/command-reference.md).
-_TEXT_EXTENSIONS = {".md", ".markdown", ".log"}
+_TEXT_EXTENSIONS = (".md", ".markdown", ".log")
 
 
 def _guess_mime(filename: str) -> str:
     """Guess a MIME type, defaulting to application/octet-stream."""
-    if os.path.splitext(filename)[1].lower() in _TEXT_EXTENSIONS:
+    if filename.lower().endswith(_TEXT_EXTENSIONS):
         return "text/plain"
     mime, _ = mimetypes.guess_type(filename)
     return mime or "application/octet-stream"
+
+
+async def _raw_http(fn, *args, **kwargs):
+    """Run a direct `requests` call through run_sdk.
+
+    A timeout or connection error becomes APIError (exit 4) instead of a
+    traceback; the SDK does the same for its own calls through PlaneError.
+    """
+    import requests
+
+    try:
+        return await run_sdk(fn, *args, **kwargs)
+    except requests.RequestException as e:
+        raise APIError(f"Upload request failed: {e}") from e
 
 
 def require_file(path: str) -> str:
@@ -160,7 +174,7 @@ async def upload_embed_image(
     v2_url = f"{cfg.base_url}/api/assets/v2/workspaces/{workspace}/projects/{project_id}/"
     # NOTE: raw requests + X-Api-Key, same pattern as documents.py — the SDK
     # only covers /api/v1/ endpoints (see ADR-0003).
-    resp = await run_sdk(
+    resp = await _raw_http(
         _app_post_json,
         v2_url,
         cfg.api_key,
@@ -185,7 +199,7 @@ async def upload_embed_image(
     # NOTE: direct POST to the presigned storage URL; the signature is in the
     # form fields, so no SDK call and no X-Api-Key (ADR-0003).
     with open(path, "rb") as fh:
-        up = await run_sdk(
+        up = await _raw_http(
             requests.post,
             upload["url"],
             data=upload["fields"],
@@ -196,7 +210,7 @@ async def upload_embed_image(
         raise APIError(f"File upload failed: HTTP {up.status_code}")
 
     asset_id = created["asset_id"]
-    mark = await run_sdk(
+    mark = await _raw_http(
         _app_patch_json, f"{v2_url}{asset_id}/", cfg.api_key, {"is_uploaded": True}
     )
     if mark.status_code not in (200, 204):
@@ -205,7 +219,7 @@ async def upload_embed_image(
     # Read back through the v1 generic-asset endpoint (workspace-scoped, works
     # for any entity type) — a 2xx on the PATCH is not proof of the write
     # (see ADR-0007).
-    check = await run_sdk(
+    check = await _raw_http(
         _app_get,
         f"{cfg.base_url}/api/v1/workspaces/{workspace}/assets/{asset_id}/",
         cfg.api_key,
@@ -288,7 +302,7 @@ async def upload_attachment(
     import requests
 
     with open(path, "rb") as fh:
-        resp = await run_sdk(
+        resp = await _raw_http(
             requests.post,
             upload["url"],
             data=upload["fields"],
@@ -383,5 +397,5 @@ async def list_(
         raise handle_api_error(e)
 
     items = listed if isinstance(listed, list) else listed.get("results", [])
-    data = [_enrich_attachment(a) for a in items]
+    data = [_enrich_attachment(a) for a in items if not a.get("is_deleted")]
     output(data, ATTACHMENT_COLUMNS, title=f"Attachments on {issue}", as_json=json)
