@@ -51,6 +51,7 @@ Comments are cached **per work item** (keyed by `item_id`, not just the project)
 |----------|--------|
 | Documents / Pages | Change frequently |
 | Individual resource lookups (by UUID/identifier) | Single-resource fetches should always be fresh |
+| Attachments (`attachment ls`, uploads) | Read and written straight through the API; an upload is verified by reading the list back, which a cache would defeat |
 | Intake queue (`intake ls`) | Goes straight to the API (there is no `cached_list_intake`), so the queue always reflects the current state |
 
 **Important distinction**: What's cached is the *list of state definitions* — the lookup table that maps state UUIDs to display names and colors — not the association between a work item and its state. A work item's own fields are only ever as stale as its 2-minute TTL.
