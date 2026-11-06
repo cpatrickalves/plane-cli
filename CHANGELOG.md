@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 - `planecli intake` command group: `ls`, `create`, `accept`, `decline`, `delete`, `enabled` for project intake queues. Mutations take the work item UUID shown in the `Issue ID` column of `intake ls`. `accept`/`decline` require the project Admin role (the API silently ignores the change for lower roles, so the CLI verifies it and fails loudly). `delete` also permanently deletes the underlying work item for any status other than `accepted`
+- `planecli --version` shows the commit that runs when installed from git or as an editable checkout (for example `0.5.1+18c7682`)
+
+### Fixed
+- `project create` without `-i` now derives the identifier from the first 5 ASCII letters of the name (accents folded, digits and symbols dropped), instead of the first 3 raw characters, which could include spaces and punctuation. Names with no usable letters fail with a validation error asking for `-i`, and a 409 on a derived identifier names the value and suggests `-i`. Thanks to Omar Adel (#8)
+- `document create` no longer crashes before the API call: `CreatePage` now receives the required `description_html` at construction (`<p></p>` when `--content` is omitted)
 
 ## [0.5.1] - 2026-07-03
 

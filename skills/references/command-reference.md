@@ -192,7 +192,7 @@ planecli project create NAME [OPTIONS]
 | Parameter | Description |
 |---|---|
 | `NAME` | Project name (required) |
-| `--identifier` / `-i` | Short identifier (e.g. `API`) |
+| `--identifier` / `-i` | Short identifier (e.g. `API`). Optional. Defaults to the first 5 letters of the name, uppercased. Pass `-i` if that is taken or the name has no usable letters |
 | `--description` / `-d` | Description |
 | `--json` | JSON output |
 

@@ -6,9 +6,25 @@ from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from plane.models.pages import CreatePage
 
-from planecli.commands.documents import _enrich_doc
+from planecli.commands.documents import DOC_FIELDS, _enrich_doc, create
 from planecli.utils.body_html import body_to_html
+
+
+def _page_model(**overrides) -> MagicMock:
+    """A fake Page: only `.model_dump()` is used by the create command."""
+    payload = {
+        "id": "page-1",
+        "name": "Test doc",
+        "description_html": "<p></p>",
+        "created_at": "2026-08-28T10:00:00Z",
+        "updated_at": "2026-08-28T10:00:00Z",
+    }
+    payload.update(overrides)
+    m = MagicMock()
+    m.model_dump.return_value = payload
+    return m
 
 
 def test_enrich_doc_strips_html_to_text():
@@ -58,23 +74,63 @@ def test_body_to_html_fenced_block_becomes_pre_code():
 @patch("planecli.commands.documents.resolve_project_async", new_callable=AsyncMock)
 @patch("planecli.commands.documents.get_workspace", return_value="ws")
 @patch("planecli.commands.documents.get_client")
-async def test_doc_create_without_content_sends_empty_paragraph(
-    mock_client, mock_ws, mock_resolve, mock_run_sdk, mock_output
+async def test_create_passes_description_html_when_content_provided(
+    mock_client, mock_ws, mock_resolve, mock_run_sdk, mock_output_single
 ):
-    """description_html is a required CreatePage field; omitting it crashed
-    construction even when --content was not given."""
-    from planecli.commands.documents import create
+    """CreatePage is constructed with wrapped --content, not assigned after the fact."""
+    mock_resolve.return_value = {"id": "p1", "identifier": "ABC"}
+    mock_run_sdk.return_value = _page_model(name="Test doc", description_html="<p>hello</p>")
 
-    mock_resolve.return_value = {"id": "proj-1"}
-    mock_run_sdk.return_value = MagicMock(
-        model_dump=lambda: {"id": "p1", "name": "Doc", "description_html": "<p></p>"}
-    )
+    await create(title="Test doc", content="hello", project="ABC")
 
-    await create(title="Doc", project="Frontend")
+    args = mock_run_sdk.call_args[0]
+    assert args[0] is mock_client.return_value.pages.create_project_page
+    assert args[1:3] == ("ws", "p1")
+    payload = args[3]
+    assert isinstance(payload, CreatePage)
+    assert payload.name == "Test doc"
+    assert payload.description_html == "<p>hello</p>"
+    data, fields = mock_output_single.call_args[0]
+    assert fields is DOC_FIELDS
+    assert data["name"] == "Test doc"
 
-    page_data = mock_run_sdk.call_args[0][3]
-    assert page_data.description_html == "<p></p>"
-    assert page_data.name == "Doc"
+
+@patch("planecli.commands.documents.output_single")
+@patch("planecli.commands.documents.run_sdk", new_callable=AsyncMock)
+@patch("planecli.commands.documents.resolve_project_async", new_callable=AsyncMock)
+@patch("planecli.commands.documents.get_workspace", return_value="ws")
+@patch("planecli.commands.documents.get_client")
+async def test_create_passes_empty_html_body_when_content_omitted(
+    mock_client, mock_ws, mock_resolve, mock_run_sdk, mock_output_single
+):
+    """Omitting --content still supplies a valid empty HTML body at construction."""
+    mock_resolve.return_value = {"id": "p1"}
+    mock_run_sdk.return_value = _page_model()
+
+    await create(title="Test doc", project="ABC")
+
+    payload = mock_run_sdk.call_args[0][3]
+    assert isinstance(payload, CreatePage)
+    assert payload.name == "Test doc"
+    assert payload.description_html == "<p></p>"
+
+
+@patch("planecli.commands.documents.output_single")
+@patch("planecli.commands.documents.run_sdk", new_callable=AsyncMock)
+@patch("planecli.commands.documents.get_workspace", return_value="ws")
+@patch("planecli.commands.documents.get_client")
+async def test_create_without_project_creates_workspace_page(
+    mock_client, mock_ws, mock_run_sdk, mock_output_single
+):
+    """Without --project the page is created at workspace level."""
+    mock_run_sdk.return_value = _page_model()
+
+    await create(title="Test doc", content="hello")
+
+    args = mock_run_sdk.call_args[0]
+    assert args[0] is mock_client.return_value.pages.create_workspace_page
+    assert args[1] == "ws"
+    assert args[2].description_html == "<p>hello</p>"
 
 
 @patch("planecli.commands.documents.output_single")
@@ -85,12 +141,8 @@ async def test_doc_create_without_content_sends_empty_paragraph(
 async def test_doc_create_converts_content_to_html(
     mock_client, mock_ws, mock_resolve, mock_run_sdk, mock_output
 ):
-    from planecli.commands.documents import create
-
     mock_resolve.return_value = {"id": "proj-1"}
-    mock_run_sdk.return_value = MagicMock(
-        model_dump=lambda: {"id": "p1", "name": "Doc", "description_html": ""}
-    )
+    mock_run_sdk.return_value = _page_model(description_html="")
 
     await create(
         title="Doc",

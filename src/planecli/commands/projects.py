@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import unicodedata
 from typing import Annotated
 
 import cyclopts
 from cyclopts import Parameter
-from plane.errors import PlaneError
+from plane.errors import HttpError, PlaneError
 
 from planecli.api.async_sdk import paginate_all_async, run_sdk
 from planecli.api.client import get_client, get_workspace, handle_api_error
@@ -36,12 +37,23 @@ _NETWORK_TO_STATE = {
 }
 
 
+def _default_identifier(name: str) -> str:
+    """Derive a default identifier: the first 5 ASCII letters of the name, uppercased.
+
+    Digits and non-ASCII letters are excluded because work item IDs built from them would
+    not match ``ISSUE_ID_PATTERN``. The result is empty if the name has no usable letters.
+    """
+    normalized = unicodedata.normalize("NFKD", name)
+    return "".join(c for c in normalized if c.isascii() and c.isalpha())[:5].upper()
+
+
 def _enrich_project(data: dict) -> dict:
     """Add convenience fields to a project dict."""
     network = data.get("network")
     fallback = str(network) if network is not None else ""
     data["state_display"] = _NETWORK_TO_STATE.get(network, fallback)
     return data
+
 
 PROJECT_FIELDS = [
     ("id", "UUID"),
@@ -90,9 +102,8 @@ async def list_(
         if state_lower not in state_to_network:
             valid = ", ".join(sorted(state_to_network.keys()))
             from planecli.exceptions import ValidationError
-            raise ValidationError(
-                f"Invalid state '{state}'. Valid states: {valid}"
-            )
+
+            raise ValidationError(f"Invalid state '{state}'. Valid states: {valid}")
         target_network = state_to_network[state_lower]
         data = [d for d in data if d.get("network") == target_network]
 
@@ -147,23 +158,39 @@ async def create(
     name
         Project name.
     identifier
-        Short project identifier (e.g. FE, BE). Auto-generated if not specified.
+        Short project identifier (e.g. FE, BE). Defaults to the first 5 letters of the name.
     description
         Project description.
     """
     from plane.models.projects import CreateProject
 
+    from planecli.exceptions import ValidationError
+
+    resolved_identifier = identifier.upper() if identifier else _default_identifier(name)
+    if not resolved_identifier:
+        raise ValidationError(
+            f"Cannot derive an identifier from project name '{name}'.",
+            hint="Pass one explicitly with -i/--identifier.",
+        )
+
     try:
         client = get_client()
         workspace = get_workspace()
 
-        create_data = CreateProject(name=name, identifier=(identifier or name[:3].upper()))
-        if identifier:
-            create_data.identifier = identifier.upper()
+        create_data = CreateProject(name=name, identifier=resolved_identifier)
         if description:
             create_data.description = description
 
-        project = await run_sdk(client.projects.create, workspace, create_data)
+        try:
+            project = await run_sdk(client.projects.create, workspace, create_data)
+        except HttpError as e:
+            if not identifier and e.status_code == 409:
+                raise ValidationError(
+                    f"Could not create project '{name}': the name or the auto-generated "
+                    f"identifier '{resolved_identifier}' is already taken.",
+                    hint="Pass another identifier with -i/--identifier, or change the name.",
+                ) from e
+            raise
         data = project.model_dump()
 
         from planecli.cache import invalidate_resource
@@ -208,9 +235,7 @@ async def update(
         if description:
             update_data.description = description
 
-        updated = await run_sdk(
-            client.projects.update, workspace, project_id, update_data
-        )
+        updated = await run_sdk(client.projects.update, workspace, project_id, update_data)
         data = updated.model_dump()
 
         from planecli.cache import invalidate_resource

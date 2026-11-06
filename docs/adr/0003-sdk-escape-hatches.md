@@ -29,7 +29,7 @@ Chosen option: **A**, because the SDK is correct for the large majority of calls
 The three escape hatches:
 
 1. **Work items — raw `_get()`.** Resolvers call `client.work_items._get(path)`, the SDK's low-level HTTP accessor, which returns a **plain dict** and skips `WorkItemDetail` validation. This is used for UUID lookups, `ABC-123` identifier lookups, and cross-project lookups in `utils/resolve.py`. Each site carries a `NOTE:` explaining that the API returns `assignees`/`labels` as UUID strings.
-2. **Documents (Pages) — direct HTTP.** `commands/documents.py` calls the Plane HTTP API directly with `requests` and an `X-Api-Key` header, run through `run_sdk(requests.get, ...)` so it still gets the thread-pool + retry treatment from [ADR-0001](0001-async-wrapper-over-sync-sdk.md).
+2. **Documents (Pages) — direct HTTP.** For `list`, `update`, and `delete`, `commands/documents.py` calls the Plane HTTP API directly with `requests` and an `X-Api-Key` header through `asyncio.to_thread`. These calls run in a thread but deliberately skip `run_sdk`, so they get no concurrency semaphore and no retries from [ADR-0001](0001-async-wrapper-over-sync-sdk.md). `show` and `create` use the SDK through `run_sdk`.
 3. **Estimate points — derive from work items.** `cached_list_estimate_points` fetches work items with `expand=estimate_point` (again via raw `_get()`, since expansion turns `estimate_point` from a string into a dict and breaks SDK validation) and collects the unique `{id, value}` pairs. `resolve_estimate_point_async` then maps a requested value to its UUID.
 
 ## Consequences
@@ -43,8 +43,8 @@ The three escape hatches:
 - The escape hatches are coupled to current API quirks; if the SDK is fixed upstream, these should be revisited and removed.
 
 **Neutral:**
-- All three bypasses still flow through the async wrapper, so they inherit concurrency limiting and retry.
+- The work item and estimate point bypasses still flow through the async wrapper, so they inherit concurrency limiting and retry. The direct document calls do not, so a transient error on `doc list`, `update`, or `delete` fails the command.
 
 ## Confirmation
 
-Every bypass is marked with a `NOTE:` comment at its call site (grep for `_get(` in `utils/resolve.py` and `cache.py`, and the `X-Api-Key` header in `commands/documents.py`). If a future `plane-sdk` release fixes `WorkItemDetail` validation or adds Pages/estimate-point endpoints, those NOTEs are the checklist for removing the workarounds.
+Work item bypasses are marked with a `NOTE:` comment at their call sites. To list every bypass, grep for `_get(` in `utils/resolve.py` and `cache.py`, and for the `X-Api-Key` header in `commands/documents.py`. If a future `plane-sdk` release fixes `WorkItemDetail` validation or adds Pages/estimate-point endpoints, those call sites are the checklist for removing the workarounds.
