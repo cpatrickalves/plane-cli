@@ -41,6 +41,7 @@ def _enrich_attachment(data: dict) -> dict:
     and the byte count at the top level; flatten both so formatters and
     `--json` consumers see one consistent shape.
     """
+    data = {**data}
     attrs = data.get("attributes") or {}
     data["name"] = attrs.get("name", "")
     data["type"] = attrs.get("type", "")
@@ -48,10 +49,17 @@ def _enrich_attachment(data: dict) -> dict:
     return data
 
 
+# Platforms without /etc/mime.types leave mimetypes blind to these.
+_EXTRA_MIME = {".md": "text/markdown", ".markdown": "text/markdown", ".log": "text/plain"}
+
+
 def _guess_mime(filename: str) -> str:
     """Guess a MIME type, defaulting to application/octet-stream."""
     mime, _ = mimetypes.guess_type(filename)
-    return mime or "application/octet-stream"
+    if mime:
+        return mime
+    ext = os.path.splitext(filename)[1].lower()
+    return _EXTRA_MIME.get(ext, "application/octet-stream")
 
 
 async def _resolve_item(issue: str, project: str | None):
@@ -304,11 +312,15 @@ async def attach(
     """
     from planecli.formatters import console
 
+    path = os.path.expanduser(file)
+    if not os.path.isfile(path):
+        raise ValidationError(f"File not found: {path}")
+
     try:
         item, project_id = await _resolve_item(issue, project)
         client = get_client()
         workspace = get_workspace()
-        mine = await upload_attachment(client, workspace, project_id, item["id"], file, force=force)
+        mine = await upload_attachment(client, workspace, project_id, item["id"], path, force=force)
     except PlaneError as e:
         raise handle_api_error(e)
 

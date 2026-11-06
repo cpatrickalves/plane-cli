@@ -45,16 +45,176 @@ def test_enrich_attachment_tolerates_missing_attributes():
     assert result["size"] is None
 
 
-@patch(
-    "planecli.commands.attachments._resolve_item",
-    new_callable=AsyncMock,
-)
-async def test_attach_rejects_missing_file(mock_resolve):
+@patch("planecli.commands.attachments.run_sdk", new_callable=AsyncMock)
+@patch("planecli.commands.attachments.get_client")
+@patch("planecli.commands.attachments._resolve_item", new_callable=AsyncMock)
+async def test_attach_rejects_missing_file(mock_resolve, mock_client, mock_run):
+    # The file is checked before anything touches config or the API, so a
+    # missing file is exit 5 even with no Plane config (as in CI).
     from planecli.exceptions import ValidationError
 
-    mock_resolve.return_value = ({"id": "item-1"}, "proj-1")
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="File not found: /definitely/not/here.png") as exc:
         await _run_attach("/definitely/not/here.png")
+
+    assert exc.value.exit_code == 5
+    mock_resolve.assert_not_called()
+    mock_client.assert_not_called()
+    mock_run.assert_not_called()
+
+
+@patch("planecli.commands.attachments.run_sdk", new_callable=AsyncMock)
+@patch("planecli.commands.attachments.get_client")
+@patch("planecli.commands.attachments._resolve_item", new_callable=AsyncMock)
+async def test_attach_rejects_directory_path(mock_resolve, mock_client, mock_run, tmp_path):
+    from planecli.exceptions import ValidationError
+
+    with pytest.raises(ValidationError, match=f"File not found: {tmp_path}"):
+        await _run_attach(str(tmp_path))
+
+    mock_resolve.assert_not_called()
+    mock_client.assert_not_called()
+    mock_run.assert_not_called()
+
+
+@patch("planecli.commands.attachments.upload_attachment", new_callable=AsyncMock)
+@patch("planecli.commands.attachments.get_workspace", return_value="ws")
+@patch("planecli.commands.attachments.get_client")
+@patch("planecli.commands.attachments._resolve_item", new_callable=AsyncMock)
+async def test_attach_expands_tilde_before_checking(
+    mock_resolve, _client, _ws, mock_upload, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "shot.png").write_bytes(b"png")
+    mock_resolve.return_value = ({"id": "item-1"}, "proj-1")
+    mock_upload.return_value = {"id": "a1", "attributes": {"name": "shot.png"}, "size": 3}
+
+    await _run_attach("~/shot.png")
+
+    mock_resolve.assert_awaited_once()
+    mock_upload.assert_awaited_once()
+
+
+@patch("planecli.commands.attachments.run_sdk", new_callable=AsyncMock)
+@patch("planecli.commands.attachments.get_workspace", return_value="ws")
+@patch("planecli.commands.attachments.get_client")
+@patch("planecli.commands.attachments._resolve_item", new_callable=AsyncMock)
+async def test_attach_maps_api_401_to_exit_2(mock_resolve, _client, _ws, mock_run, tmp_path):
+    from plane.errors import HttpError
+
+    from planecli.exceptions import AuthenticationError
+
+    f = tmp_path / "x.png"
+    f.write_bytes(b"png")
+    mock_resolve.return_value = ({"id": "item-1"}, "proj-1")
+    mock_run.side_effect = HttpError("Unauthorized", status_code=401)
+
+    with pytest.raises(AuthenticationError) as exc:
+        await _run_attach(str(f))
+    assert exc.value.exit_code == 2
+
+
+def test_guess_mime_fallback_without_platform_table():
+    # Some platforms ship no /etc/mime.types, so mimetypes knows no .md/.log.
+    with patch("planecli.commands.attachments.mimetypes.guess_type", return_value=(None, None)):
+        assert _guess_mime("notes.md") == "text/markdown"
+        assert _guess_mime("notes.MD") == "text/markdown"
+        assert _guess_mime("README.markdown") == "text/markdown"
+        assert _guess_mime("server.LOG") == "text/plain"
+        assert _guess_mime("data.unknownext") == "application/octet-stream"
+        assert _guess_mime("noext") == "application/octet-stream"
+
+
+def test_enrich_attachment_does_not_mutate_input():
+    data = {"id": "a1", "attributes": {"name": "shot.png", "type": "image/png"}, "size": 5}
+    before = {"id": "a1", "attributes": {"name": "shot.png", "type": "image/png"}, "size": 5}
+
+    result = _enrich_attachment(data)
+
+    assert data == before
+    assert result["name"] == "shot.png"
+
+
+def _ls_patches():
+    return (
+        patch("planecli.commands.attachments._resolve_item", new_callable=AsyncMock),
+        patch("planecli.commands.attachments.get_client"),
+        patch("planecli.commands.attachments.get_workspace", return_value="ws"),
+        patch("planecli.commands.attachments.run_sdk", new_callable=AsyncMock),
+    )
+
+
+def _att(i, name, mime, size):
+    return {"id": i, "attributes": {"name": name, "type": mime, "size": size}, "is_uploaded": True}
+
+
+async def _run_ls(listed, capsys, *, as_json=True):
+    from planecli.commands.attachments import list_
+
+    p_resolve, p_client, p_ws, p_run = _ls_patches()
+    with p_resolve as mock_resolve, p_client, p_ws, p_run as mock_run:
+        mock_resolve.return_value = ({"id": "item-1"}, "proj-1")
+        mock_run.return_value = listed
+        await list_("ABC-1", json=as_json)
+    return capsys.readouterr()
+
+
+async def test_ls_lists_paginated_results(capsys):
+    import json
+
+    out = await _run_ls(
+        {"results": [_att("a1", "a.png", "image/png", 10), _att("a2", "b.md", "text/markdown", 3)]},
+        capsys,
+    )
+    rows = json.loads(out.out)
+    assert [(r["name"], r["type"], r["size"]) for r in rows] == [
+        ("a.png", "image/png", 10),
+        ("b.md", "text/markdown", 3),
+    ]
+
+
+async def test_ls_lists_plain_list(capsys):
+    import json
+
+    out = await _run_ls([{"id": "a1", "attributes": {"name": "a.log"}, "size": 7}], capsys)
+    rows = json.loads(out.out)
+    assert len(rows) == 1
+    assert (rows[0]["name"], rows[0]["size"]) == ("a.log", 7)
+
+
+async def test_ls_empty(capsys):
+    import json
+
+    out = await _run_ls([], capsys)
+    assert json.loads(out.out) == []
+    await _run_ls([], capsys, as_json=False)  # table path: no error on an empty list
+
+
+async def test_ls_maps_api_403_to_exit_4():
+    from plane.errors import HttpError
+
+    from planecli.commands.attachments import list_
+    from planecli.exceptions import APIError
+
+    p_resolve, p_client, p_ws, p_run = _ls_patches()
+    with p_resolve as mock_resolve, p_client, p_ws, p_run as mock_run:
+        mock_resolve.return_value = ({"id": "item-1"}, "proj-1")
+        mock_run.side_effect = HttpError("Forbidden", status_code=403)
+        with pytest.raises(APIError) as exc:
+            await list_("ABC-1")
+    assert exc.value.exit_code == 4
+
+
+async def test_ls_unresolved_item_exits_3():
+    from planecli.commands.attachments import list_
+    from planecli.exceptions import ResourceNotFoundError
+
+    p_resolve, p_client, p_ws, p_run = _ls_patches()
+    with p_resolve as mock_resolve, p_client, p_ws, p_run as mock_run:
+        mock_resolve.side_effect = ResourceNotFoundError("Work item", "ABC-999")
+        with pytest.raises(ResourceNotFoundError) as exc:
+            await list_("ABC-999")
+    assert exc.value.exit_code == 3
+    mock_run.assert_not_called()
 
 
 def _upload_side_effects(verify_list):
