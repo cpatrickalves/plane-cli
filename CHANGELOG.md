@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [0.6.0] - 2026-11-06
 
 ### Added
+- Several workspaces: optional `[name]` sections in `~/.plane_api` (slug, and optionally their own API key and base URL), a global `--workspace`/`-w NAME` flag that selects a section or any slug for one command, and `planecli workspaces` to list them without secrets. The existing file format keeps working unchanged
 - `planecli intake` command group: `ls`, `create`, `accept`, `decline`, `delete`, `enabled` for project intake queues. Mutations take the work item UUID shown in the `Issue ID` column of `intake ls`. `accept`/`decline` require the project Admin role (the API silently ignores the change for lower roles, so the CLI verifies it and fails loudly). `delete` also permanently deletes the underlying work item for any status other than `accepted`
 - `planecli --version` shows the commit that runs when installed from git or as an editable checkout (for example `0.6.0+5c93a2e`)
 
