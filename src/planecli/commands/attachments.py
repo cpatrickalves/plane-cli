@@ -62,6 +62,17 @@ def _guess_mime(filename: str) -> str:
     return _EXTRA_MIME.get(ext, "application/octet-stream")
 
 
+def require_file(path: str) -> str:
+    """Expand `~` and return the path, or raise ValidationError if it is not a file.
+
+    Run before any resolver or API call, so bad input writes nothing to Plane.
+    """
+    expanded = os.path.expanduser(path)
+    if not os.path.isfile(expanded):
+        raise ValidationError(f"File not found: {expanded}")
+    return expanded
+
+
 async def _resolve_item(issue: str, project: str | None):
     """Resolve a work item to (item_dict, project_id), with or without -p."""
     client = get_client()
@@ -312,9 +323,7 @@ async def attach(
     """
     from planecli.formatters import console
 
-    path = os.path.expanduser(file)
-    if not os.path.isfile(path):
-        raise ValidationError(f"File not found: {path}")
+    path = require_file(file)
 
     try:
         item, project_id = await _resolve_item(issue, project)
