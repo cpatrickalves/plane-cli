@@ -214,8 +214,9 @@ planecli doc ls -p "Frontend"
 # Read a document
 planecli doc show "Architecture Guide" -p "Frontend"
 
-# Create a document
-planecli doc create --title "API Spec" --content "## Endpoints..." -p "Frontend"
+# Create a document (plain text: blank lines split paragraphs, URLs become links,
+# backticks and fences become code; markdown headings are not converted)
+planecli doc create --title "API Spec" --content "$(cat spec.txt)" -p "Frontend"
 
 # Update a document
 planecli doc update "API Spec" --content "Updated content" -p "Frontend"
@@ -446,6 +447,7 @@ src/planecli/
     formatters/
         __init__.py      # Rich table and JSON output
     utils/
+        body_html.py     # Plain text to the editor's HTML (doc content)
         colors.py        # Color helpers for priorities, states, labels
         fuzzy.py         # Fuzzy search with rapidfuzz
         resolve.py       # Resource resolution (UUID/identifier/fuzzy)

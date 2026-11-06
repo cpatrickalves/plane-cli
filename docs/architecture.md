@@ -40,6 +40,8 @@ record before reporting success — see [ADR-0007](adr/0007-verify-writes-the-ap
 
 **`utils/fuzzy.py`** — rapidfuzz `token_sort_ratio` matching with a default threshold of 60. `find_best_match` returns the single best match; `find_matches` returns ranked candidates for "did you mean …?" suggestions.
 
+**`utils/body_html.py`** — `body_to_html` turns the plain-text `--content` of `doc create` and `doc update` into the HTML the Plane editor stores: paragraphs, line breaks, links, and code. See [Plane API quirks](guides/plane-api.md#documents).
+
 ## Data Flow — resolving and updating a work item
 
 `planecli wi update ABC-123 --state "review"`:

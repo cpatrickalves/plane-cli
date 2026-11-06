@@ -117,9 +117,11 @@ planecli label create "urgent" -p "Project" --color "#FF0000" --json
 planecli state ls -p "Project" --group started --json
 planecli state create "In Review" -p "Project" --group started --color "#FFA500" --json
 
-# Documents (some self-hosted versions answer 405 to doc ls: no page listing in their public API)
+# Documents (some self-hosted versions answer 405 to doc ls, doc update and doc delete)
 planecli doc ls -p "Project" --json
-planecli doc create --title "Spec" --content "## Details..." -p "Project" --json
+# --content is plain text: blank lines split paragraphs, backticks and fences become code;
+# markdown headings are not converted
+planecli doc create --title "Spec" --content "$(cat spec.txt)" -p "Project" --json
 
 # Comments
 planecli comment ls ABC-123 --json
