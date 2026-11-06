@@ -29,7 +29,13 @@ def _page_model(**overrides) -> MagicMock:
 
 def test_enrich_doc_strips_html_to_text():
     data = _enrich_doc({"id": "p1", "name": "Doc", "description_html": "<p>hi<br/>there</p>"})
-    assert data["content_text"] == "hithere"
+    assert data["content_text"] == "hi\nthere"
+
+
+def test_enrich_doc_round_trips_converted_body():
+    body = "line one\nline two\n\nuse `Vec<u8>` here"
+    data = _enrich_doc({"id": "p1", "description_html": body_to_html(body)})
+    assert data["content_text"] == body.replace("`", "")
 
 
 def test_enrich_doc_empty_description():
@@ -67,6 +73,44 @@ def test_body_to_html_inline_code_is_escaped_and_not_linkified():
 def test_body_to_html_fenced_block_becomes_pre_code():
     html = body_to_html("before\n\n```py\nprint('<x>')\n```\n\nafter")
     assert html == "<p>before</p><pre><code>print(&#x27;&lt;x&gt;&#x27;)</code></pre><p>after</p>"
+
+
+def test_body_to_html_url_mid_code_span_is_not_linkified():
+    assert body_to_html("`see https://x.io now`") == "<p><code>see https://x.io now</code></p>"
+    assert body_to_html('`curl "https://x.io/a"`') == (
+        "<p><code>curl &quot;https://x.io/a&quot;</code></p>"
+    )
+
+
+def test_body_to_html_fence_glued_to_text_stays_out_of_paragraph():
+    assert body_to_html("Run:\n```\nls\n```\ndone") == (
+        "<p>Run:</p><pre><code>ls</code></pre><p>done</p>"
+    )
+
+
+def test_body_to_html_adjacent_fences():
+    assert body_to_html("```\na\n```\n```\nb\n```") == (
+        "<pre><code>a</code></pre><pre><code>b</code></pre>"
+    )
+
+
+def test_body_to_html_fence_info_string_and_crlf():
+    assert body_to_html("```c++\r\n#include <vector>\r\n```") == (
+        "<pre><code>#include &lt;vector&gt;</code></pre>"
+    )
+
+
+def test_body_to_html_url_keeps_balanced_closing_paren():
+    url = "https://en.wikipedia.org/wiki/Foo_(bar)"
+    assert body_to_html(url) == f'<p><a href="{url}">{url}</a></p>'
+    assert body_to_html("(see https://x.io/a)") == (
+        '<p>(see <a href="https://x.io/a">https://x.io/a</a>)</p>'
+    )
+
+
+@pytest.mark.parametrize("body", ["", "  \n "])
+def test_body_to_html_empty_input_gives_empty_paragraph(body):
+    assert body_to_html(body) == "<p></p>"
 
 
 @patch("planecli.commands.documents.output_single")
@@ -223,19 +267,130 @@ async def test_doc_delete_archives_before_deleting(
     from planecli.commands.documents import delete
 
     today = date.today().isoformat()
+    calls: list[str] = []
     patch_resp = MagicMock()
     patch_resp.json.return_value = {"id": "p1", "archived_at": today}
-    mock_patch.return_value = patch_resp
-    mock_delete.return_value = MagicMock()
+    mock_patch.side_effect = lambda *a, **k: calls.append("patch") or patch_resp
+    mock_delete.side_effect = lambda *a, **k: calls.append("delete") or MagicMock()
 
     await delete("doc-uuid")
 
     url = mock_patch.call_args[0][0]
     assert url == "https://plane.example.com/api/v1/workspaces/ws/pages/doc-uuid/"
     assert mock_patch.call_args.kwargs["json"] == {"archived_at": today}
-    # archive happened before delete, on the same URL
-    assert mock_delete.called
+    assert calls == ["patch", "delete"]
     assert mock_delete.call_args[0][0] == url
+
+
+@patch("requests.delete")
+@patch("requests.patch")
+@patch("planecli.api.client.get_config", return_value=_mock_config())
+@patch("planecli.commands.documents.resolve_project_async", new_callable=AsyncMock)
+@patch("planecli.commands.documents.get_workspace", return_value="ws")
+@patch("planecli.commands.documents.get_client")
+async def test_doc_delete_project_page_url(
+    mock_client, mock_ws, mock_resolve, mock_config, mock_patch, mock_delete
+):
+    from planecli.commands.documents import delete
+
+    mock_resolve.return_value = {"id": "proj-1"}
+    mock_patch.return_value.json.return_value = {"archived_at": "2026-01-01"}
+
+    await delete("doc-uuid", project="Frontend")
+
+    url = "https://plane.example.com/api/v1/workspaces/ws/projects/proj-1/pages/doc-uuid/"
+    assert mock_patch.call_args[0][0] == url
+    assert mock_delete.call_args[0][0] == url
+
+
+@pytest.mark.parametrize("archived_at", ["2026-01-01", "2026-01-01T00:00:00Z"])
+@patch("requests.delete")
+@patch("requests.patch")
+@patch("planecli.api.client.get_config", return_value=_mock_config())
+@patch("planecli.commands.documents.get_workspace", return_value="ws")
+@patch("planecli.commands.documents.get_client")
+async def test_doc_delete_accepts_any_archived_at_value(
+    mock_client, mock_ws, mock_config, mock_patch, mock_delete, archived_at
+):
+    """The server may echo another date or a timestamp; any value means archived."""
+    from planecli.commands.documents import delete
+
+    mock_patch.return_value.json.return_value = {"archived_at": archived_at}
+
+    await delete("doc-uuid")
+
+    mock_delete.assert_called_once()
+
+
+def _http_error_response(status: int) -> MagicMock:
+    import requests
+
+    resp = MagicMock()
+    resp.status_code = status
+    resp.raise_for_status.side_effect = requests.HTTPError(f"{status} Error", response=resp)
+    return resp
+
+
+@pytest.mark.parametrize(("status", "exit_code"), [(400, 4), (401, 2), (403, 4), (404, 4)])
+@patch("requests.delete")
+@patch("requests.patch")
+@patch("planecli.api.client.get_config", return_value=_mock_config())
+@patch("planecli.commands.documents.get_workspace", return_value="ws")
+@patch("planecli.commands.documents.get_client")
+async def test_doc_delete_archive_http_error_maps_to_exit_code(
+    mock_client, mock_ws, mock_config, mock_patch, mock_delete, status, exit_code
+):
+    from planecli.commands.documents import delete
+    from planecli.exceptions import PlaneCLIError
+
+    mock_patch.return_value = _http_error_response(status)
+
+    with pytest.raises(PlaneCLIError) as exc_info:
+        await delete("doc-uuid")
+
+    assert exc_info.value.exit_code == exit_code
+    mock_delete.assert_not_called()
+
+
+@patch("requests.delete")
+@patch("requests.patch")
+@patch("planecli.api.client.get_config", return_value=_mock_config())
+@patch("planecli.commands.documents.get_workspace", return_value="ws")
+@patch("planecli.commands.documents.get_client")
+async def test_doc_delete_archive_non_json_response_is_api_error(
+    mock_client, mock_ws, mock_config, mock_patch, mock_delete
+):
+    import requests
+
+    from planecli.commands.documents import delete
+    from planecli.exceptions import APIError
+
+    mock_patch.return_value.json.side_effect = requests.JSONDecodeError("Expecting value", "", 0)
+
+    with pytest.raises(APIError, match="not deleted"):
+        await delete("doc-uuid")
+
+    mock_delete.assert_not_called()
+
+
+@patch("requests.delete")
+@patch("requests.patch")
+@patch("planecli.api.client.get_config", return_value=_mock_config())
+@patch("planecli.commands.documents.get_workspace", return_value="ws")
+@patch("planecli.commands.documents.get_client")
+async def test_doc_delete_failure_after_archive_says_it_stays_archived(
+    mock_client, mock_ws, mock_config, mock_patch, mock_delete
+):
+    from planecli.commands.documents import delete
+    from planecli.exceptions import APIError
+
+    mock_patch.return_value.json.return_value = {"archived_at": "2026-01-01"}
+    mock_delete.return_value = _http_error_response(502)
+
+    with pytest.raises(APIError, match="archived but not deleted") as exc_info:
+        await delete("doc-uuid")
+
+    assert "HTTP 502" in exc_info.value.message
 
 
 @patch("requests.delete")

@@ -2,7 +2,7 @@
 
 The Plane API stores HTML verbatim and does not parse markdown or auto-link
 URLs — only the web editor does — so text written via the CLI must arrive
-already converted. Shared by comment and document write commands.
+already converted. Used by document write commands.
 """
 
 from __future__ import annotations
@@ -13,6 +13,9 @@ import re
 _URL_RE = re.compile(r"(?<![\"'>=])(https?://[A-Za-z0-9\-._~:/?#\[\]@!$&()*+,;=%]+)")
 # Trailing punctuation that belongs to the sentence, not the URL.
 _URL_TRAIL = ".,;:!?)]}。，；：！？）】、"
+# A fenced block: an opening ``` line with an optional info string (py, c++,
+# shell-session...), the body, and a closing ``` line.
+_FENCE_RE = re.compile(r"^[ \t]*```[^\n`]*\n(.*?)^[ \t]*```[ \t]*$", re.DOTALL | re.MULTILINE)
 
 
 def _linkify(text: str) -> str:
@@ -23,43 +26,26 @@ def _linkify(text: str) -> str:
     """
 
     def _sub(m: re.Match[str]) -> str:
-        url = m.group(1).rstrip(_URL_TRAIL)
-        trail = m.group(1)[len(url) :]
-        return f'<a href="{url}">{url}</a>{trail}'
+        raw = m.group(1)
+        url = raw.rstrip(_URL_TRAIL)
+        # Keep a closing paren that balances one inside the URL: .../Foo_(bar)
+        while raw[len(url) :].startswith(")") and url.count("(") > url.count(")"):
+            url += ")"
+        return f'<a href="{url}">{url}</a>{raw[len(url) :]}'
 
     return _URL_RE.sub(_sub, text)
 
 
-def _inline_code(text: str) -> str:
-    """Convert `inline code` to a code tag with HTML-escaped content."""
-    return re.sub(
-        r"`([^`\n]+)`",
-        lambda m: f"<code>{html.escape(m.group(1))}</code>",
-        text,
+def _inline(text: str) -> str:
+    """Convert one paragraph: code spans, bare URLs, and line breaks."""
+    # Odd slots of the split are code-span contents, so URLs inside them are
+    # never linkified.
+    parts = re.split(r"`([^`\n]+)`", text)
+    converted = "".join(
+        f"<code>{html.escape(part)}</code>" if i % 2 else _linkify(part)
+        for i, part in enumerate(parts)
     )
-
-
-def _extract_code_blocks(text: str) -> tuple[str, list[str]]:
-    """Pull fenced code blocks out of the text, replacing each with a token.
-
-    Returns the text with \x00N\x00 placeholders and the list of HTML
-    fragments (pre-wrapped escaped code) to restore at the end. Extracting
-    first keeps their content out of linkify and the newline-to-br pass.
-    """
-    blocks: list[str] = []
-
-    def _hold(match: re.Match[str]) -> str:
-        code = html.escape(match.group(1).strip("\n"))
-        blocks.append(f"<pre><code>{code}</code></pre>")
-        return f"\x00{len(blocks) - 1}\x00"
-
-    text = re.sub(
-        r"```[ \t]*\w*[ \t]*\n(.*?)```",
-        _hold,
-        text,
-        flags=re.DOTALL,
-    )
-    return text, blocks
+    return converted.replace("\n", "<br/>")
 
 
 def body_to_html(body: str) -> str:
@@ -69,21 +55,17 @@ def body_to_html(body: str) -> str:
     the editor collapses whitespace inside a paragraph, so unconverted
     newlines would render as one long line. Backticks become code tags and
     fenced blocks become pre-wrapped code (the editor stores HTML, it does
-    not parse markdown).
+    not parse markdown). Empty input gives an empty paragraph.
     """
-    text, blocks = _extract_code_blocks(body.strip())
     parts: list[str] = []
-    for p in re.split(r"\n\s*\n", text):
-        p = p.strip()
-        if not p:
+    # Odd slots of the split are fence bodies, so a block never lands inside
+    # a paragraph.
+    for i, segment in enumerate(_FENCE_RE.split(body.replace("\r\n", "\n").strip())):
+        if i % 2:
+            code = html.escape(segment.strip("\n"))
+            parts.append(f"<pre><code>{code}</code></pre>")
             continue
-        converted = _linkify(_inline_code(p)).replace(chr(10), "<br/>")
-        if re.fullmatch(r"(?:\x00\d+\x00[ \t]*)+", p):
-            # A paragraph that is only a code block keeps its pre wrapper.
-            parts.append(converted)
-        else:
-            parts.append(f"<p>{converted}</p>")
-    result = "".join(parts)
-    for i, fragment in enumerate(blocks):
-        result = result.replace(f"\x00{i}\x00", fragment)
-    return result
+        for p in re.split(r"\n\s*\n", segment):
+            if p.strip():
+                parts.append(f"<p>{_inline(p.strip())}</p>")
+    return "".join(parts) or "<p></p>"

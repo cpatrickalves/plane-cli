@@ -12,6 +12,7 @@ from plane.errors import PlaneError
 
 from planecli.api.async_sdk import run_sdk
 from planecli.api.client import get_client, get_workspace, handle_api_error
+from planecli.exceptions import APIError, AuthenticationError, PlaneCLIError
 from planecli.formatters import output, output_single
 from planecli.utils.body_html import body_to_html
 from planecli.utils.resolve import resolve_project_async
@@ -41,12 +42,27 @@ def _enrich_doc(data: dict) -> dict:
     """Add convenience fields to a document dict."""
     desc_html = data.get("description_html") or ""
     if desc_html:
+        import html
         import re
 
-        data["content_text"] = re.sub(r"<[^>]+>", "", desc_html).strip()
+        # Turn line and block breaks back into newlines before dropping tags,
+        # so lines and paragraphs do not run together.
+        text = re.sub(r"<br\s*/?>", "\n", desc_html)
+        text = re.sub(r"</(?:p|pre)>", "\n\n", text)
+        data["content_text"] = html.unescape(re.sub(r"<[^>]+>", "", text)).strip()
     else:
         data["content_text"] = ""
     return data
+
+
+def _http_error(err: Exception, message: str) -> PlaneCLIError:
+    """Translate a requests failure into the CLI's exit-code contract."""
+    response = getattr(err, "response", None)
+    # A 4xx/5xx Response is falsy, so compare with None.
+    status = response.status_code if response is not None else None
+    if status == 401:
+        return AuthenticationError()
+    return APIError(f"{message}: {err}", status_code=status)
 
 
 @doc_app.command(name="list", alias="ls")
@@ -251,7 +267,9 @@ async def delete(
     *,
     project: Annotated[str | None, Parameter(alias="-p")] = None,
 ) -> None:
-    """Delete (trash) a document.
+    """Permanently delete a document: archive it, then delete it.
+
+    If the delete step fails, the document stays archived.
 
     Parameters
     ----------
@@ -259,15 +277,9 @@ async def delete(
         Document UUID.
     project
         Project name/ID (required for project-level pages).
-
-    Note: The API only deletes pages that are already archived, and silently
-    ignores unknown fields on the archive request — so this PATCHes archived_at
-    (today, YYYY-MM-DD), verifies the response actually carries it, and only
-    then DELETEs.
     """
     import requests
 
-    from planecli.exceptions import APIError
     from planecli.formatters import console
 
     try:
@@ -285,25 +297,32 @@ async def delete(
         else:
             url = f"{config.base_url}/api/v1/workspaces/{workspace}/pages/{document}/"
 
-        today = date.today().isoformat()
         headers = {"X-Api-Key": config.api_key, "Content-Type": "application/json"}
-        # A 200 alone is not proof the archive happened — the API answers 200
-        # and ignores unknown fields, so verify archived_at came back set.
-        resp = await asyncio.to_thread(
-            requests.patch,
-            url,
-            headers=headers,
-            json={"archived_at": today},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        if resp.json().get("archived_at") != today:
+        # The API deletes only archived pages, and a 200 on the archive PATCH
+        # is not proof it applied, so check archived_at came back set
+        # (ADR-0007). Any non-null value means archived.
+        try:
+            resp = await asyncio.to_thread(
+                requests.patch,
+                url,
+                headers=headers,
+                json={"archived_at": date.today().isoformat()},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            archived_at = resp.json().get("archived_at")
+        except requests.RequestException as e:
+            raise _http_error(e, "could not archive the document, so it was not deleted") from e
+        if not archived_at:
             raise APIError(
                 "the document was not archived, so it was not deleted. "
                 "Archiving may require a higher project role."
             )
-        resp = await asyncio.to_thread(requests.delete, url, headers=headers, timeout=30)
-        resp.raise_for_status()
+        try:
+            resp = await asyncio.to_thread(requests.delete, url, headers=headers, timeout=30)
+            resp.raise_for_status()
+        except requests.RequestException as e:
+            raise _http_error(e, "the document was archived but not deleted") from e
     except PlaneError as e:
         raise handle_api_error(e)
 
