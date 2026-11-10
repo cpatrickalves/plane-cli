@@ -34,10 +34,15 @@ def lighten_hex(color: str, factor: float = 0.35) -> str:
         color: Hex color string (e.g. '#a3a3a3').
         factor: 0.0 = unchanged, 1.0 = white. Default 0.35.
     """
-    color = _normalize_hex(color)
-    r = int(color[1:3], 16)
-    g = int(color[3:5], 16)
-    b = int(color[5:7], 16)
+    normalized = _normalize_hex(color)
+    try:
+        r = int(normalized[1:3], 16)
+        g = int(normalized[3:5], 16)
+        b = int(normalized[5:7], 16)
+    except ValueError:
+        # Malformed API color (e.g. a named color): pass it through untouched
+        # so Rich can still resolve it, mirroring colorize()'s degrade-gracefully contract.
+        return color
     r = int(r + (255 - r) * factor)
     g = int(g + (255 - g) * factor)
     b = int(b + (255 - b) * factor)
