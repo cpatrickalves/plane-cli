@@ -14,6 +14,7 @@ Uses `uv`, with tasks in the Makefile (`make help` lists them).
 
 - Write docs, comments, and commit messages in English.
 - Cite ADRs or guides in code comments, because tracker issue IDs and URLs are unreachable after delivery.
+- Bump `metadata.version` in `skills/SKILL.md` (semver, quoted) in the same commit as any change under `skills/`: patch for wording, minor for a new rule or command, major when how the skill is invoked changes.
 
 ## Read when relevant
 

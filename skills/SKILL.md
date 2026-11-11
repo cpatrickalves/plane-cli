@@ -4,7 +4,7 @@ description: "Manage Plane.so through the planecli CLI — work items, projects,
 allowed-tools: Bash(planecli *)
 metadata:
   author: Patrick Alves
-  version: "1.7"
+  version: "1.8.0"
 ---
 
 # PlaneCLI
