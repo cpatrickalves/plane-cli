@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from planecli.utils.resolve import ISSUE_ID_PATTERN, _is_uuid
+import pytest
+
+from planecli.exceptions import ResourceNotFoundError
+from planecli.utils.resolve import ISSUE_ID_PATTERN, _is_uuid, resolve_user_async
 
 
 class TestIsUUID:
@@ -48,3 +51,33 @@ class TestIssueIdPattern:
     def test_invalid_numbers_in_prefix(self):
         match = ISSUE_ID_PATTERN.match("A1B-123")
         assert match is None
+
+
+class TestResolveUserAsyncNullEmail:
+    """Plane SSO users can have email=None, which used to crash name lookups."""
+
+    MEMBERS = [
+        {"id": "u1", "display_name": "Patrick", "email": "patrick@example.com"},
+        {"id": "u2", "display_name": "黄晨旭", "email": None},
+        {"id": "u3", "display_name": "Terry", "email": None},
+    ]
+
+    @pytest.fixture(autouse=True)
+    def _mock_members(self, monkeypatch):
+        async def fake_list_members(workspace):
+            return self.MEMBERS
+
+        # resolve_user_async imports this lazily from planecli.cache.
+        monkeypatch.setattr("planecli.cache.cached_list_members", fake_list_members)
+
+    async def test_fuzzy_name_lookup_with_null_email(self):
+        result = await resolve_user_async("黄晨旭", None, "company")
+        assert result["id"] == "u2"
+
+    async def test_exact_email_match_still_works(self):
+        result = await resolve_user_async("PATRICK@example.com", None, "company")
+        assert result["id"] == "u1"
+
+    async def test_empty_query_does_not_match_null_email(self):
+        with pytest.raises(ResourceNotFoundError):
+            await resolve_user_async("", None, "company")
