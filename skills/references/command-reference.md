@@ -10,6 +10,7 @@
 - [States](#states)
 - [Documents](#documents)
 - [Comments](#comments)
+- [Attachments](#attachments)
 - [Intake](#intake)
 - [Users](#users)
 - [Cache](#cache)
@@ -34,6 +35,7 @@ Environment variable `PLANECLI_NO_CACHE=1` disables cache globally.
 | `project` | `projects` |
 | `document` | `doc`, `docs`, `documents` |
 | `comment` | `comments` |
+| `attachment` | `attachments` |
 | `module` | `modules` |
 | `label` | `labels` |
 | `state` | `states` |
@@ -42,6 +44,7 @@ Environment variable `PLANECLI_NO_CACHE=1` disables cache globally.
 | `list` | `ls` |
 | `show` | `read` |
 | `create` | `new` |
+| `attachment attach` | `upload`, `new` |
 
 ## Work Items
 
@@ -102,6 +105,7 @@ planecli wi create TITLE [OPTIONS]
 | `--parent` | Parent work item identifier (ABC-123) for sub-issues |
 | `--estimate` / `-e` | Story point estimate |
 | `--description` / `-d` | Description. Stored as raw HTML, not markdown — see the Gotchas in SKILL.md |
+| `--image` / `-i` | Image file to embed in the description (repeatable). Every path is checked before the item is created; the images are uploaded after the create and appended to the `-d` text as `<p><img src="ASSET_UUID" /></p>` |
 | `--json` | JSON output |
 
 ### wi update
@@ -121,6 +125,8 @@ planecli wi update ISSUE [OPTIONS]
 | `--clear-labels` | Remove all labels |
 | `--name` | New title |
 | `--description` / `-d` | New description. Stored as raw HTML, not markdown |
+| `--image` / `-i` | Image file to embed (repeatable). Appended to the new `-d` text, or to the existing description. Uploaded only after every other option resolved, so a typo in `--state` uploads nothing |
+| `--force` | Upload an image even if an attachment with the same name exists. Applies only when the server falls back to v1 attachments |
 | `--json` | JSON output |
 
 ### wi delete
@@ -295,6 +301,36 @@ planecli comment delete COMMENT_ID --issue ISSUE [--project/-p PROJECT]
 oldest → newest — not the first N chronologically. A limit of `0` or a negative
 value returns no comments (consistent with the `[:limit]` semantics used elsewhere,
 where `0` means "none").
+
+## Attachments
+
+Command group: `planecli attachment` (alias: `attachments`)
+
+```
+planecli attachment attach ISSUE -f FILE [--project/-p PROJECT] [--force] [--json]
+planecli attachment ls ISSUE [--project/-p PROJECT] [--json]
+```
+
+- `attach` checks that `FILE` exists before any API call (exit 5 if not), uploads it in three
+  steps (register, push to the presigned storage URL, mark uploaded), and reads it back: exit 4
+  if the server does not confirm the upload, or if storage times out (300 s) or refuses the
+  connection.
+- **Duplicate names.** If a file with the same name is already attached, `attach` asks
+  `Upload anyway? [y/N]` on stderr when stdin is a terminal. Without a terminal it refuses with
+  exit 5 and names `--force`, so a script never blocks on stdin
+  ([ADR-0008](../../docs/adr/0008-destructive-deletes-are-documented-not-prompted.md)).
+  `--force` uploads without asking.
+- `ls` shows `ID`, `Name`, `Type`, `Size`, `Uploaded`, `Created`. In `--json`, `name`, `type` and
+  `size` are copied to the top level from the API's `attributes`.
+- **Images in descriptions** (`wi create/update -i`) first try the app endpoint
+  `/api/assets/v2/` (entity type `ISSUE_DESCRIPTION`, not listed by `attachment ls`). Servers that
+  answer 401/403/404 to an API token there fall back to a v1 attachment, which `attachment ls`
+  shows and which the duplicate-name check covers. The `img` tag stores only the asset UUID; the
+  web editor resolves it.
+- MIME types come from the file extension. `.md`, `.markdown` and `.log` always upload as
+  `text/plain`, because some Plane servers reject `text/markdown` with `400 Invalid file type.`
+  Unknown types upload as `application/octet-stream`. Other types a server's allow list
+  rejects fail with exit 4.
 
 ## Intake
 

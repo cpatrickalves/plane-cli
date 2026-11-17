@@ -1,10 +1,10 @@
 ---
 name: planecli
-description: "Manage Plane.so through the planecli CLI — work items, projects, cycles/sprints, modules, labels, states, documents, intake queue, comments. Use when the user mentions Plane, planecli, or a work-item identifier like ABC-123, or asks about tasks, sprints, or backlogs in a project where Plane is the tracker."
+description: "Manage Plane.so through the planecli CLI — work items, projects, cycles/sprints, modules, labels, states, documents, intake queue, comments, attachments. Use when the user mentions Plane, planecli, or a work-item identifier like ABC-123, or asks about tasks, sprints, or backlogs in a project where Plane is the tracker."
 allowed-tools: Bash(planecli *)
 metadata:
   author: Patrick Alves
-  version: "1.8.0"
+  version: "1.9.2"
 ---
 
 # PlaneCLI
@@ -126,6 +126,12 @@ planecli doc create --title "Spec" --content "$(cat spec.txt)" -p "Project" --js
 # Comments
 planecli comment ls ABC-123 --json
 planecli comment create ABC-123 --body "Fixed in PR #456" --json
+
+# Attachments (a duplicate name refuses with exit 5 without a TTY; --force uploads anyway)
+planecli attachment attach ABC-123 -f ./server.log --json
+planecli attachment ls ABC-123 --json
+# Embed images in a description (repeatable; paths are checked before anything is written)
+planecli wi update ABC-123 -i ./shot.png --json
 ```
 
 ## Gotchas

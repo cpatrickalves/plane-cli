@@ -480,6 +480,7 @@ async def create(
     parent: str | None = None,
     estimate: Annotated[int | None, Parameter(alias="-e")] = None,
     description: Annotated[str | None, Parameter(alias="-d")] = None,
+    image: Annotated[list[str] | None, Parameter(alias="-i")] = None,
     json: bool = False,
 ) -> None:
     """Create a new work item.
@@ -506,8 +507,15 @@ async def create(
         Story point estimate.
     description
         Work item description (plain text).
+    image
+        Image file path to embed in the description (repeatable). The image is
+        uploaded as an attachment and an img tag is appended to the description.
     """
     from plane.models.work_items import CreateWorkItem
+
+    from planecli.commands.attachments import require_file
+
+    image_paths = [require_file(p) for p in image or []]
 
     try:
         client = get_client()
@@ -576,8 +584,14 @@ async def create(
             if label_ids:
                 create_data.labels = label_ids
 
+        # Resolve the module before creating, so a typo in --module leaves no
+        # item behind for a retry to duplicate.
+        module_data = (
+            await resolve_module_async(module, client, workspace, project_id) if module else None
+        )
+
         item = await run_sdk(client.work_items.create, workspace, project_id, create_data)
-        data = _enrich_work_item(item.model_dump())
+        raw = item.model_dump()
 
         # Invalidate work items cache for this project
         from planecli.cache import invalidate_resource
@@ -585,15 +599,36 @@ async def create(
         await invalidate_resource("work_items", workspace, project_id)
 
         # Add to module if specified
-        if module:
-            module_data = await resolve_module_async(module, client, workspace, project_id)
+        if module_data:
             await run_sdk(
                 client.modules.add_work_items,
                 workspace,
                 project_id,
                 module_data["id"],
-                [data["id"]],
+                [raw["id"]],
             )
+
+        # Embed images: upload each, then append <img> tags to the description
+        # (set here, not in create, because uploads need the issue to exist).
+        if image_paths:
+            from plane.models.work_items import UpdateWorkItem
+
+            from planecli.commands.attachments import embed_html, upload_embed_image
+
+            parts = [create_data.description_html or ""]
+            for path in image_paths:
+                asset_id = await upload_embed_image(client, workspace, project_id, raw["id"], path)
+                parts.append(embed_html(asset_id))
+            raw["description_html"] = "".join(parts)
+            await run_sdk(
+                client.work_items.update,
+                workspace,
+                project_id,
+                raw["id"],
+                UpdateWorkItem(description_html=raw["description_html"]),
+            )
+
+        data = _enrich_work_item(raw)
 
     except PlaneError as e:
         raise handle_api_error(e)
@@ -614,6 +649,8 @@ async def update(
     name: str | None = None,
     estimate: Annotated[int | None, Parameter(alias="-e")] = None,
     description: Annotated[str | None, Parameter(alias="-d")] = None,
+    image: Annotated[list[str] | None, Parameter(alias="-i")] = None,
+    force: bool = False,
     json: bool = False,
 ) -> None:
     """Update a work item.
@@ -640,8 +677,19 @@ async def update(
         Story point estimate.
     description
         New description (plain text).
+    image
+        Image file path to embed in the description (repeatable). Uploaded as
+        an attachment and appended to the existing description, or to the new
+        --description if one is given.
+    force
+        Upload images even if an attachment with the same file name already exists.
+        Applies only when the server falls back to v1 attachments for the upload.
     """
     from plane.models.work_items import UpdateWorkItem
+
+    from planecli.commands.attachments import require_file
+
+    image_paths = [require_file(p) for p in image or []]
 
     try:
         client = get_client()
@@ -707,6 +755,20 @@ async def update(
 
         if clear_labels:
             update_data.labels = []
+
+        # Upload last, once every resolver has succeeded, so a typo in
+        # --state or --labels leaves no orphaned upload behind. Images are
+        # appended to the new --description, or to the existing one.
+        if image_paths:
+            from planecli.commands.attachments import embed_html, upload_embed_image
+
+            parts = [update_data.description_html or item_data.get("description_html") or ""]
+            for path in image_paths:
+                asset_id = await upload_embed_image(
+                    client, workspace, project_id, item_id, path, force=force
+                )
+                parts.append(embed_html(asset_id))
+            update_data.description_html = "".join(parts)
 
         updated = await run_sdk(
             client.work_items.update, workspace, project_id, item_id, update_data

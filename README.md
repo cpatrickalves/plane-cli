@@ -15,6 +15,7 @@ The main differentiator is **intelligent fuzzy search**: reference any resource 
 - **Documents**: Create, read, update, and delete project documents
 - **Intake**: Manage a project's intake queue — list, create, triage (accept/decline), and delete items
 - **Comments**: Add, update, and delete comments on work items
+- **Attachments**: Upload files to work items, list them, and embed images in descriptions
 - **Users**: List workspace members and identify the authenticated user
 - **Fuzzy Search**: Intelligent resource resolution — `--project "Front"` finds "Frontend"
 - **Dual Output**: Rich tables (default) or JSON with `--json` for scripting
@@ -100,6 +101,10 @@ planecli wi create "Review PR #345" --parent ABC-234 --assign "Luiz" --state "In
 
 # Update a work item
 planecli wi update ABC-123 --state "Done" --priority none
+
+# Embed images in the description (repeatable -i/--image; uploaded, then appended as <img>)
+planecli wi create "Login screen glitch" -p "Frontend" -d "See screenshot" -i ./shot.png
+planecli wi update ABC-123 -i ./before.png -i ./after.png
 
 # Quick-assign a work item (defaults to yourself)
 planecli wi assign ABC-123
@@ -245,6 +250,21 @@ planecli intake delete  <issue-uuid> -p Frontend
 # Is intake enabled for a project?
 planecli intake enabled Frontend --json
 ```
+
+### Attachments
+
+```bash
+# Upload a file to a work item
+planecli attachment attach ABC-123 -f ./server.log
+
+# List a work item's attachments
+planecli attachment ls ABC-123
+```
+
+If a file with the same name is already attached, `attach` asks before uploading when it runs in a
+terminal (the question goes to stderr). Without a terminal it refuses with exit code 5; pass
+`--force` to upload anyway. `wi update -i --force` does the same, but only when the server falls
+back to v1 attachments for the image (see the command reference).
 
 ### Comments
 
