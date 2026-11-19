@@ -485,7 +485,12 @@ async def resolve_user_async(query: str, client: PlaneClient, workspace: str) ->
         raise ResourceNotFoundError("User", query)
 
     for m in members:
-        if m.get("email", "").lower() == query.lower():
+        # SSO-backed members may have email=None (Plane returns the key with a
+        # null value), so `.get("email", "")` still yields None. Guard the value
+        # itself, not just the missing key, and skip empty emails so an empty
+        # query cannot accidentally match a member without an email.
+        email = m.get("email")
+        if email and email.lower() == query.lower():
             return m
 
     def user_name(u: dict) -> str:
