@@ -7,7 +7,77 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from plane.errors import PlaneError
 
-from planecli.commands.comments import _enrich_comment
+from planecli.commands.comments import _body_to_html, _enrich_comment
+
+
+def test_body_to_html_wraps_single_line_in_one_paragraph():
+    assert _body_to_html("hello") == "<p>hello</p>"
+
+
+def test_body_to_html_splits_blank_lines_into_paragraphs():
+    body = "first\n\nsecond\n\n\nthird"
+    assert _body_to_html(body) == "<p>first</p><p>second</p><p>third</p>"
+
+
+def test_body_to_html_converts_single_newline_to_br():
+    body = "追加修复：\n1) first\n2) second"
+    assert _body_to_html(body) == "<p>追加修复：<br/>1) first<br/>2) second</p>"
+
+
+def test_body_to_html_linkifies_bare_url():
+    body = "PR https://github.com/owner/repo/pull/12"
+    assert (
+        _body_to_html(body) == '<p>PR <a href="https://github.com/owner/repo/pull/12">'
+        "https://github.com/owner/repo/pull/12</a></p>"
+    )
+
+
+def test_body_to_html_keeps_trailing_punctuation_out_of_link():
+    body = "见 https://example.com/a。下一条"
+    assert (
+        _body_to_html(body)
+        == '<p>见 <a href="https://example.com/a">https://example.com/a</a>。下一条</p>'
+    )
+
+
+def test_body_to_html_does_not_double_link_existing_anchor():
+    body = '<a href="https://example.com">https://example.com</a>'
+    assert _body_to_html(body) == f"<p>{body}</p>"
+
+
+def test_body_to_html_linkifies_multiple_urls_in_one_line():
+    body = "Issue https://a/1\nPR https://b/2"
+    assert (
+        _body_to_html(body) == '<p>Issue <a href="https://a/1">https://a/1</a><br/>'
+        'PR <a href="https://b/2">https://b/2</a></p>'
+    )
+
+
+def test_body_to_html_converts_inline_backticks_to_code():
+    body = "分支 `feat/x`，已推送"
+    assert _body_to_html(body) == "<p>分支 <code>feat/x</code>，已推送</p>"
+
+
+def test_body_to_html_escapes_html_inside_inline_code():
+    body = "存 `<p>` 标签"
+    assert _body_to_html(body) == "<p>存 <code>&lt;p&gt;</code> 标签</p>"
+
+
+def test_body_to_html_does_not_linkify_url_inside_code():
+    body = "`https://a/1` 是内部地址"
+    assert _body_to_html(body) == "<p><code>https://a/1</code> 是内部地址</p>"
+
+
+def test_body_to_html_converts_fenced_block_to_pre():
+    body = "前\n\n```\ncode <b>x</b>\n```\n\n后"
+    assert (
+        _body_to_html(body) == "<p>前</p><pre><code>code &lt;b&gt;x&lt;/b&gt;</code></pre><p>后</p>"
+    )
+
+
+def test_body_to_html_fenced_block_ignores_language_hint():
+    body = "```python\nprint(1)\n```"
+    assert _body_to_html(body) == "<pre><code>print(1)</code></pre>"
 
 
 def test_enrich_comment_resolves_actor_name_from_members_map():
